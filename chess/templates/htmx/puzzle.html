@@ -1,5 +1,15 @@
 <chess-board
     style="width: 400px"
     position="{{ puzzle.fen }}"
+    orientation="{{ puzzle.orientation }}"
     draggable-pieces>
 </chess-board>
+<article>
+    <p>Orientation: {{ puzzle.orientation }} </p>
+    <p>Puzzle ID: {{ puzzle.puzzle_id }}</p>
+    <p>Rating: {{ puzzle.rating }}</p>
+    <p>Moves: {{ puzzle.moves|join:" " }}</p>
+    <p>FEN: {{ puzzle.fen }}</p>
+    <p>Themes: {{ puzzle.themes|join:", " }}</p>
+    <p>Openings: {{ puzzle.openings|join:", " }}</p>
+</article>

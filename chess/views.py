@@ -4,45 +4,26 @@ from django.http import JsonResponse
 from django.conf import settings
 from pathlib import Path
 from django.shortcuts import render
+from .repository import LichessDB
 
 def get_puzzle(request):
+    db = LichessDB()
+
     theme = request.GET.get("theme", "")
-    rating_min = int(request.GET.get("ratingMin", "0"))
-    rating_max = int(request.GET.get("ratingMax", "3000"))
+    opening = request.GET.get("opening", "")
 
-    db_path = Path(settings.BASE_DIR) / "lichess_puzzles.sqlite3"
+    themes = theme.split(",") if theme else None
+    openings = opening.split(",") if opening else None
 
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+    puzzle = db.get_random_puzzle(
+        rating_min=int(request.GET.get("ratingMin", 0)),
+        rating_max=int(request.GET.get("ratingMax", 3000)),
+        themes=themes,
+        openings=openings,
+    )
 
-    query = """
-        SELECT puzzle_id, fen, moves, rating, themes, opening_tags
-        FROM puzzles
-        WHERE rating BETWEEN ? AND ?
-    """
-    params = [rating_min, rating_max]
-
-    if theme:
-        query += " AND themes LIKE ?"
-        params.append(f"%{theme}%")
-
-    query += " ORDER BY RANDOM() LIMIT 1"
-
-    cursor.execute(query, params)
-    row = cursor.fetchone()
-    conn.close()
-
-    if not row:
+    if not puzzle:
         return HttpResponse("<p>No puzzle found</p>")
-
-    puzzle = {
-        "puzzle_id": row[0],
-        "fen": row[1],
-        "moves": row[2].split(),
-        "rating": row[3],
-        "themes": row[4].split(),
-        "opening_tags": row[5].split() if row[5] else []
-    }
 
     return render(request, "htmx/puzzle.html", {"puzzle": puzzle})
 
