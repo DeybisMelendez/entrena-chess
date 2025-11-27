@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div x-data="puzzleBoard()" x-init="init()">
+
+    <button 
+        hx-get="{% url 'get_puzzle' %}?theme=fork&ratingMin=1200&ratingMax=1800"
+        hx-target="#puzzle-display"
+        hx-swap="innerHTML">
+        Nuevo puzzle
+    </button>
+
+    <!-- Este div recibe el JSON y llama a Alpine -->
+    <div id="puzzle-display"></div>
+    </div>
+
+</div>
+
+{% endblock %}
