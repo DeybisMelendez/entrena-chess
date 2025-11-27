@@ -23,8 +23,10 @@ class LichessDB:
 
     def get_board_orientation(self, fen):
         """Determina la orientación del tablero según el FEN."""
+        # Debido a que el rival juega primero, la orientación es opuesta al color
+        # que tiene el turno en el FEN.
         try:
-            return "black" if fen.split()[1] == "b" else "white"
+            return "white" if fen.split()[1] == "b" else "black"
         except Exception:
             return "white"
 

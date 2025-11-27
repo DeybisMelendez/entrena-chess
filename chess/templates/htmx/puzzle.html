@@ -4,57 +4,119 @@
     orientation="{{ puzzle.orientation }}"
     draggable-pieces>
 </chess-board>
-<article>
-    <p>Orientation: {{ puzzle.orientation }} </p>
-    <p>Puzzle ID: {{ puzzle.puzzle_id }}</p>
-    <p>Rating: {{ puzzle.rating }}</p>
-    <p>Moves: {{ puzzle.moves|join:" " }}</p>
-    <p>FEN: {{ puzzle.fen }}</p>
-    <p>Themes: {{ puzzle.themes|join:", " }}</p>
-    <p>Openings: {{ puzzle.openings|join:", " }}</p>
-</article>
 
 <script>
+function puzzleInit(fen) {
     const board = document.querySelector('chess-board');
-    const game = new Chess('{{puzzle.fen}}');
+    const game = new Chess(fen);
 
+    // Lista de movimientos como UCI: ["e8d7", "a2e6", ...]
+    const solutionMoves = {{ puzzle.moves|safe }};
+    let moveIndex = 0;
+    let puzzleFailed = false;
+
+    const opponentMove = solutionMoves[moveIndex];
+
+    if (opponentMove) {
+        setTimeout(() => {
+            // aplicar jugada del rival
+            const from = opponentMove.slice(0, 2);
+            const to = opponentMove.slice(2, 4);
+            console.log("Oponente mueve: " + opponentMove);
+
+            game.move({ from, to, promotion: 'q' });
+            board.setPosition(game.fen());
+
+            moveIndex++;
+
+        }, 600); // pequeño delay para que se vea natural
+    }
+
+    // Acción: jugador mueve
     board.addEventListener('drag-start', (e) => {
-        const {source, piece, position, orientation} = e.detail;
+        const { piece } = e.detail;
 
-        // do not pick up pieces if the game is over
+        // no permitir mover si puzzle fallado
+        if (puzzleFailed) {
+            e.preventDefault();
+            return;
+        }
+
+        // no permitir mover si la partida ya está terminada
         if (game.game_over()) {
             e.preventDefault();
             return;
         }
 
-        // only pick up pieces for the side to move
-        if ((game.turn() === 'w' && piece.search(/^b/) !== -1) ||
-            (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
+        // solo permitir mover el color que le toca
+        if ((game.turn() === 'w' && piece.startsWith('b')) ||
+            (game.turn() === 'b' && piece.startsWith('w'))) {
             e.preventDefault();
             return;
         }
     });
 
     board.addEventListener('drop', (e) => {
-        const {source, target, setAction} = e.detail;
+        const { source, target, setAction } = e.detail;
 
-        // see if the move is legal
-        const move = game.move({
-            from: source,
-            to: target,
-            promotion: 'q' // NOTE: always promote to a queen for example simplicity
-        });
-
-        // illegal move
-        if (move === null) {
+        if (puzzleFailed) {
             setAction('snapback');
+            return;
         }
 
+        const attemptedUci = source + target;
+        const correctMove = solutionMoves[moveIndex];
+
+        const tentative = game.move({
+            from: source,
+            to: target,
+            promotion: "q"
+        });
+
+        if (tentative === null) {
+            // Movimiento ilegal → snapback sin fallar puzzle
+            console.log("❌ Ilegal: " + attemptedUci);
+            setAction("snapback");
+            return;
+        }
+
+        if (attemptedUci !== correctMove) {
+            console.log("❌ Legal pero incorrecto: " + attemptedUci);
+            puzzleFailed = true;
+            setAction("snapback");
+
+            // revertir el movimiento que chess.js hizo
+            game.undo();
+
+            alert("❌ Movimiento incorrecto");
+            return;
+        }
+
+        console.log("✔ Correcto: " + attemptedUci);
+        board.setPosition(game.fen());
+        moveIndex++;
+
+        const opponentMove = solutionMoves[moveIndex];
+        if (opponentMove) {
+            setTimeout(() => {
+                const from = opponentMove.slice(0, 2);
+                const to = opponentMove.slice(2, 4);
+
+                console.log("🤖 Rival mueve: " + opponentMove);
+                game.move({ from, to, promotion: "q" });
+                board.setPosition(game.fen());
+
+                moveIndex++;
+
+            }, 600);
+        }
     });
 
-    // update the board position after the piece snap
-    // for castling, en passant, pawn promotion
-    board.addEventListener('snap-end', (e) => {
-    board.setPosition(game.fen());
+
+    // mantener tablero sincronizado
+    board.addEventListener('snap-end', () => {
+        board.setPosition(game.fen());
     });
+}
+puzzleInit("{{ puzzle.fen }}");
 </script>

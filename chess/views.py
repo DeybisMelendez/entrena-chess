@@ -17,7 +17,7 @@ def get_puzzle(request):
 
     puzzle = db.get_random_puzzle(
         rating_min=int(request.GET.get("ratingMin", 0)),
-        rating_max=int(request.GET.get("ratingMax", 3000)),
+        rating_max=int(request.GET.get("ratingMax", 1000)),
         themes=themes,
         openings=openings,
     )

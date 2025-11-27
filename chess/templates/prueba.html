@@ -2,7 +2,7 @@
 
 {% block content %}
 
-<div x-data="puzzleBoard()" x-init="init()">
+<div>
 
     <button 
         hx-get="{% url 'get_puzzle' %}?theme=fork&ratingMin=1200&ratingMax=1800"
