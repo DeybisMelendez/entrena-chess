@@ -1,86 +1,56 @@
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
-from django.db import transaction
 import math
 
 
 class TrainingPreferences(models.Model):
     user = models.OneToOneField(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="training_preferences"
+    )
     puzzles_per_cycle = models.PositiveIntegerField(default=105)
+
+    def __str__(self):
+        return f"Preferences - {self.user}"
 
 
 class Theme(models.Model):
     name = models.CharField(max_length=100, unique=True)
     lichess_name = models.CharField(max_length=100, unique=True)
+    is_trainable = models.BooleanField(
+        default=True,
+        help_text="Indica si el tema puede ser asignado a ciclos de entrenamiento"
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="Descripción del tema y qué habilidad desarrolla"
+    )
 
     def __str__(self):
-        return f"{self.name} - {self.lichess_name}"
+        return f"{self.name} ({self.lichess_name})"
 
 
 class TrainingCycle(models.Model):
     """
-    Ciclo de entrenamiento estilo Botvinnik
+    Ciclo de entrenamiento semanal estilo Botvinnik
     """
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE
+        on_delete=models.CASCADE,
+        related_name="training_cycles"
     )
-
     start_date = models.DateField(default=timezone.now)
     end_date = models.DateField()
 
-    total = models.PositiveIntegerField(
-        help_text="Cantidad total de ejercicios del ciclo"
-    )
-
-    completed = models.PositiveIntegerField(default=0)
+    total_puzzles = models.PositiveIntegerField()
+    completed_puzzles = models.PositiveIntegerField(default=0)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
-    def _create_cycle_themes(self):
-
-        if self.themes.exists():
-            return
-
-        theme_elos = ThemeElo.objects.filter(user=self.user)
-
-        if theme_elos.count() == 0:
-            return
-
-        weak_themes = theme_elos.order_by("elo")[:2]
-
-        strong_theme = (
-            theme_elos
-            .exclude(theme__in=[t.theme for t in weak_themes])
-            .order_by("-elo")
-            .first()
-        )
-
-        with transaction.atomic():
-            for priority, theme_elo in enumerate(weak_themes, start=1):
-                TrainingCycleTheme.objects.create(
-                    cycle=self,
-                    theme=theme_elo.theme,
-                    priority=priority,
-                )
-
-            if strong_theme:
-                TrainingCycleTheme.objects.create(
-                    cycle=self,
-                    theme=strong_theme.theme,
-                    priority=3,
-                )
-
-    def save(self, *args, **kwargs):
-        is_new = self.pk is None
-
-        super().save(*args, **kwargs)
-
-        if is_new:
-            self._create_cycle_themes()
+    def __str__(self):
+        return f"Cycle {self.start_date} - {self.user}"
 
 
 class TrainingCycleTheme(models.Model):
@@ -89,10 +59,7 @@ class TrainingCycleTheme(models.Model):
         on_delete=models.CASCADE,
         related_name="themes"
     )
-    theme = models.ForeignKey(
-        Theme,
-        on_delete=models.CASCADE
-    )
+    theme = models.ForeignKey(Theme, on_delete=models.CASCADE)
 
     priority = models.PositiveSmallIntegerField(
         default=1,
@@ -100,7 +67,15 @@ class TrainingCycleTheme(models.Model):
     )
 
     class Meta:
-        unique_together = ("cycle", "theme")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["cycle", "theme"],
+                name="unique_cycle_theme"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.cycle} - {self.theme} (P{self.priority})"
 
 
 class BaseElo(models.Model):
@@ -115,11 +90,6 @@ class BaseElo(models.Model):
         return 1 / (1 + math.pow(10, (opponent_elo - self.elo) / 400))
 
     def k_factor(self) -> int:
-        """
-        K-factor simple:
-        - Más alto al inicio
-        - Más estable con experiencia
-        """
         if self.puzzles_played < 30:
             return 40
         if self.elo < 2000:
@@ -127,11 +97,6 @@ class BaseElo(models.Model):
         return 10
 
     def update_elo(self, opponent_elo: int, score: float):
-        """
-        score:
-        - 1.0 = win
-        - 0.0 = loss
-        """
         expected = self.expected_score(opponent_elo)
         k = self.k_factor()
 
@@ -141,10 +106,10 @@ class BaseElo(models.Model):
 
 
 class Elo(BaseElo):
-    """Elo general del usuario"""
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE
+        on_delete=models.CASCADE,
+        related_name="elo"
     )
 
     def __str__(self):
@@ -152,77 +117,117 @@ class Elo(BaseElo):
 
 
 class ThemeElo(BaseElo):
-    """Elo por tema"""
-    user = models.ForeignKey(settings.AUTH_USER_MODEL,
-                             on_delete=models.CASCADE)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="theme_elos"
+    )
     theme = models.ForeignKey(Theme, on_delete=models.CASCADE)
 
     class Meta:
-        unique_together = ("user", "theme")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "theme"],
+                name="unique_user_theme_elo"
+            )
+        ]
+        indexes = [
+            models.Index(fields=["user"]),
+            models.Index(fields=["theme"]),
+        ]
 
     def __str__(self):
-        return f"Elo de {self.user} - {self.theme}: ({self.elo})"
+        return f"{self.user} - {self.theme}: {self.elo}"
 
 
 class DailyProgress(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL,
-                             on_delete=models.CASCADE)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="daily_progress"
+    )
     date = models.DateField()
     solved = models.PositiveIntegerField(default=0)
     failed = models.PositiveIntegerField(default=0)
 
     class Meta:
-        unique_together = ("user", "date")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "date"],
+                name="unique_user_day"
+            )
+        ]
 
 
 class PuzzleAttempt(models.Model):
     """
-    Historial de puzzles realizados por el usuario
+    Historial de puzzles realizados
     """
-    user = models.ForeignKey(settings.AUTH_USER_MODEL,
-                             on_delete=models.CASCADE)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="puzzle_attempts"
+    )
     puzzle_id = models.CharField(max_length=100)
-    theme_origin = models.ForeignKey(
-        Theme, on_delete=models.SET_NULL, null=True)
+    theme = models.ForeignKey(
+        Theme, on_delete=models.SET_NULL, null=True
+    )
     solved = models.BooleanField()
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["user", "created_at"]),
+            models.Index(fields=["puzzle_id"]),
+        ]
 
 
 class ActiveExercise(models.Model):
     """
-    Ejercicio actualmente asignado al usuario.
-    Solo puede existir uno por usuario.
+    Puzzle activo (solo uno por usuario)
     """
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="active_exercise"
     )
-
     puzzle_id = models.CharField(max_length=100)
     created_at = models.DateTimeField(auto_now_add=True)
 
 
-class PuzzleTraining(models.Model):
+class RetryPuzzle(models.Model):
     """
-    Puzzles que el usuario falló y debe volver a realizar
+    Puzzles fallados que deben repetirse
     """
-    user = models.ForeignKey(settings.AUTH_USER_MODEL,
-                             on_delete=models.CASCADE)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="retry_puzzles"
+    )
     puzzle_id = models.CharField(max_length=100)
-    theme_origin = models.ForeignKey(
-        Theme, on_delete=models.SET_NULL, null=True)
-    solved = models.BooleanField(default=False)
+    theme = models.ForeignKey(
+        Theme, on_delete=models.SET_NULL, null=True
+    )
     fail_count = models.PositiveIntegerField(default=0)
     last_attempt_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ("user", "puzzle_id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "puzzle_id"],
+                name="unique_retry_puzzle"
+            )
+        ]
 
 
+"""
 class TrainingStreak(models.Model):
     user = models.OneToOneField(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    current_streak = models.IntegerField(default=0)
-    longest_streak = models.IntegerField(default=0)
-    last_training_date = models.DateField(auto_now=True)
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="training_streak"
+    )
+    current_streak = models.PositiveIntegerField(default=0)
+    longest_streak = models.PositiveIntegerField(default=0)
+    last_training_date = models.DateField(null=True, blank=True)
+"""

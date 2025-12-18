@@ -1,3 +1,13 @@
+from datetime import date
+import json
+import random
+
+from django.contrib.auth.decorators import login_required
+from django.db.models import Sum
+from django.http import JsonResponse, Http404
+from django.shortcuts import render
+from django.views.decorators.http import require_POST
+
 from .models import (
     TrainingPreferences,
     TrainingCycle,
@@ -6,34 +16,21 @@ from .models import (
     DailyProgress,
     PuzzleAttempt,
     ActiveExercise,
-    PuzzleTraining,
+    RetryPuzzle,
     Elo,
-    Theme
+    Theme,
 )
-from django.db.models import Sum
-from django.contrib.auth.decorators import login_required
-from datetime import date, timedelta
 from .utils import get_week_cycle_dates, pick_cycle_theme
-import sqlite3
-import random
-from django.utils import timezone
-from django.http import JsonResponse, Http404
-from django.conf import settings
-from pathlib import Path
-from django.shortcuts import render
 from .repository import LichessDB
-from django.views.decorators.http import require_POST
-import json
 
 
 @login_required
 def get_puzzle(request):
-    db = LichessDB()
     user = request.user
     today = date.today()
+    db = LichessDB()
 
     preferences = TrainingPreferences.objects.get(user=user)
-
     start_date, end_date = get_week_cycle_dates(today)
 
     cycle, _ = TrainingCycle.objects.get_or_create(
@@ -41,14 +38,13 @@ def get_puzzle(request):
         start_date=start_date,
         end_date=end_date,
         defaults={
-            "total": preferences.puzzles_per_cycle,
+            "total_puzzles": preferences.puzzles_per_cycle,
         }
     )
 
-    cycle_themes = TrainingCycleTheme.objects.filter(cycle=cycle)
-
+    cycle_themes = cycle.themes.select_related("theme")
     if not cycle_themes.exists():
-        raise Http404("El ciclo no tiene temas configurados.")
+        raise Http404("El ciclo no tiene temas asignados.")
 
     active = ActiveExercise.objects.filter(user=user).first()
     if active:
@@ -56,23 +52,28 @@ def get_puzzle(request):
         if not puzzle:
             active.delete()
             raise Http404("Puzzle activo inválido.")
-        return render(request, "puzzle.html", {"puzzle": puzzle, "cycle": cycle, "themes": cycle_themes})
+        return render(
+            request,
+            "puzzle.html",
+            {
+                "puzzle": puzzle,
+                "cycle": cycle,
+                "themes": cycle_themes,
+            }
+        )
 
-    puzzles_pending = PuzzleTraining.objects.filter(user=user, solved=False)
+    retry_qs = RetryPuzzle.objects.filter(
+        user=user
+    ).order_by("-fail_count", "last_attempt_at")
 
-    if puzzles_pending.exists() and random.random() < 0.1:
-        failed = puzzles_pending.order_by(
-            "-fail_count", "last_attempt_at"
-        ).first()
-
-        puzzle = db.get_puzzle_by_id(failed.puzzle_id)
-
+    if retry_qs.exists() and random.random() < 0.1:
+        retry = retry_qs.first()
+        puzzle = db.get_puzzle_by_id(retry.puzzle_id)
     else:
-
         cycle_theme = pick_cycle_theme(cycle_themes)
         theme = cycle_theme.theme
 
-        theme_elo, _ = ThemeElo.objects.get_or_create(user=user, theme=theme)
+        theme_elo = ThemeElo.objects.get(user=user, theme=theme)
 
         rating_min = max(0, theme_elo.elo - 50)
         rating_max = theme_elo.elo + 50
@@ -91,7 +92,15 @@ def get_puzzle(request):
         puzzle_id=puzzle["puzzle_id"],
     )
 
-    return render(request, "puzzle.html", {"puzzle": puzzle, "cycle": cycle, "themes": cycle_themes})
+    return render(
+        request,
+        "puzzle.html",
+        {
+            "puzzle": puzzle,
+            "cycle": cycle,
+            "themes": cycle_themes,
+        }
+    )
 
 
 @login_required
@@ -105,12 +114,11 @@ def submit_puzzle(request):
     solved = bool(data.get("solved"))
 
     active = ActiveExercise.objects.filter(user=user).first()
-
     if not active or active.puzzle_id != puzzle_id:
-        return JsonResponse({
-            "status": "error",
-            "message": "No hay puzzle activo válido"
-        }, status=400)
+        return JsonResponse(
+            {"status": "error", "message": "Puzzle activo inválido"},
+            status=400,
+        )
 
     active.delete()
 
@@ -119,30 +127,28 @@ def submit_puzzle(request):
         puzzle_id=puzzle_id,
         solved=solved,
     )
-    daily_progress, _ = DailyProgress.objects.get_or_create(
-        user=user, date=today)
+
+    daily, _ = DailyProgress.objects.get_or_create(
+        user=user,
+        date=today,
+    )
+
     if solved:
-        training = PuzzleTraining.objects.filter(
+        RetryPuzzle.objects.filter(
             user=user,
-            puzzle_id=puzzle_id
-        )
-        if training.exists():
-            training = training.first()
-            training.solved = True
-            training.save()
-        daily_progress.solved += 1
+            puzzle_id=puzzle_id,
+        ).delete()
+        daily.solved += 1
     else:
-        training, _ = PuzzleTraining.objects.get_or_create(
+        retry, _ = RetryPuzzle.objects.get_or_create(
             user=user,
             puzzle_id=puzzle_id,
         )
-        training.fail_count += 1
-        training.solved = False
-        training.save()
+        retry.fail_count += 1
+        retry.save(update_fields=["fail_count", "last_attempt_at"])
+        daily.failed += 1
 
-        daily_progress.failed += 1
-
-    daily_progress.save()
+    daily.save(update_fields=["solved", "failed"])
 
     cycle = TrainingCycle.objects.filter(
         user=user,
@@ -150,21 +156,21 @@ def submit_puzzle(request):
         end_date__gte=today,
     ).first()
 
-    if solved:
-        cycle.completed += 1
-        cycle.save()
+    if solved and cycle:
+        cycle.completed_puzzles += 1
+        cycle.save(update_fields=["completed_puzzles"])
 
     db = LichessDB()
     puzzle_data = db.get_puzzle_by_id(puzzle_id)
+
     puzzle_rating = puzzle_data["rating"]
     puzzle_themes = puzzle_data["themes"]
-
     score = 1.0 if solved else 0.0
 
-    elo, _ = Elo.objects.get_or_create(user=user)
-    elo.update_elo(
+    user_elo = Elo.objects.get(user=user)
+    user_elo.update_elo(
         opponent_elo=puzzle_rating,
-        score=score
+        score=score,
     )
 
     for theme_name in puzzle_themes:
@@ -173,23 +179,21 @@ def submit_puzzle(request):
         except Theme.DoesNotExist:
             continue
 
-        theme_elo, _ = ThemeElo.objects.get_or_create(
+        theme_elo = ThemeElo.objects.get(
             user=user,
-            theme=theme
+            theme=theme,
         )
         theme_elo.update_elo(
             opponent_elo=puzzle_rating,
-            score=score
+            score=score,
         )
 
-    return JsonResponse({
-        "status": "ok",
-        "solved": solved,
-    })
-
-
-def watch_puzzle(request):
-    return render(request, "prueba.html")
+    return JsonResponse(
+        {
+            "status": "ok",
+            "solved": solved,
+        }
+    )
 
 
 @login_required
@@ -197,10 +201,7 @@ def home(request):
     user = request.user
     today = date.today()
 
-    preferences, _ = TrainingPreferences.objects.get_or_create(
-        user=user
-    )
-
+    preferences = TrainingPreferences.objects.get(user=user)
     start_date, end_date = get_week_cycle_dates(today)
 
     cycle, _ = TrainingCycle.objects.get_or_create(
@@ -208,37 +209,46 @@ def home(request):
         start_date=start_date,
         end_date=end_date,
         defaults={
-            "total": preferences.puzzles_per_cycle,
+            "total_puzzles": preferences.puzzles_per_cycle,
         }
     )
 
     today_progress, _ = DailyProgress.objects.get_or_create(
         user=user,
-        date=today
+        date=today,
     )
 
     week_progress = DailyProgress.objects.filter(
         user=user,
-        date__range=(start_date, end_date)
+        date__range=(start_date, end_date),
     ).aggregate(
         solved=Sum("solved"),
         failed=Sum("failed"),
     )
 
-    elo_user, _ = Elo.objects.get_or_create(user=user)
+    user_elo = Elo.objects.get(user=user)
 
     weak_themes = (
         ThemeElo.objects
         .filter(user=user)
         .select_related("theme")
-        .order_by("elo")[:5]
+        .order_by("elo")[:2]
     )
+    opening_elo = ThemeElo.objects.get(
+        user=user, theme__lichess_name="opening")
+    middlegame_elo = ThemeElo.objects.get(
+        user=user, theme__lichess_name="middlegame")
+    endgame_elo = ThemeElo.objects.get(
+        user=user, theme__lichess_name="endgame")
 
     context = {
         "cycle": cycle,
         "today": today_progress,
         "week": week_progress,
-        "elo": elo_user,
+        "elo": user_elo,
+        "opening": opening_elo,
+        "middlegame": middlegame_elo,
+        "endgame": endgame_elo,
         "weak_themes": weak_themes,
     }
 

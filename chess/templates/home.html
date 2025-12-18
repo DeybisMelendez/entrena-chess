@@ -12,12 +12,26 @@
 
     <article>
         <strong>Periodo:</strong> {{ cycle.start_date }} – {{ cycle.end_date }}<br>
-        <strong>Ejercicios completados:</strong> {{ cycle.completed }} / {{ cycle.total }}<br>
+        <strong>Ejercicios completados:</strong> {{ cycle.completed_puzzles }} / {{ cycle.total_puzzles }}<br>
         <strong>Estado:</strong>
         {% if cycle.is_completed %}
             <span>Completado</span>
         {% else %}
             <span>En progreso</span>
+        {% endif %}
+        <br>
+        <strong>Temas a entrenar:</strong>
+
+        {% if weak_themes %}
+            <ul>
+                {% for theme in weak_themes %}
+                    <li>
+                        {{ theme.theme.name }} — Elo {{ theme.elo }}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="muted">No se detectan debilidades claras por ahora.</p>
         {% endif %}
     </article>
 
@@ -44,23 +58,16 @@
                 ✘ Fallidos: {{ week.failed }}
             </p>
         </article>
+        <article>
+            <h3>Elo</h3>
+            <p>
+                General: {{ elo.elo }}<br>
+                {{opening.theme.name}}: {{ opening.elo }}<br>
+                {{middlegame.theme.name}}: {{ middlegame.elo }}<br>
+                {{endgame.theme.name}}: {{ endgame.elo }}<br>
+            </p>
+        </article>
     </div>
-</section>
-
-<section>
-    <h2>Temas a entrenar</h2>
-
-    {% if weak_themes %}
-        <ul>
-            {% for theme in weak_themes %}
-                <li>
-                    {{ theme.theme.name }} — Elo {{ theme.elo }}
-                </li>
-            {% endfor %}
-        </ul>
-    {% else %}
-        <p class="muted">No se detectan debilidades claras por ahora.</p>
-    {% endif %}
 </section>
 
 {% endblock %}
