@@ -5,9 +5,10 @@ import random
 from django.contrib.auth.decorators import login_required
 from django.db.models import Sum
 from django.http import JsonResponse, Http404
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 from django.views.decorators.http import require_POST
-
+from django.utils.timezone import make_aware
+from datetime import datetime
 from .models import (
     TrainingPreferences,
     TrainingCycle,
@@ -251,3 +252,49 @@ def home(request):
     }
 
     return render(request, "home.html", context)
+
+
+@login_required
+def puzzle_history(request):
+    user = request.user
+
+    cycles = (
+        TrainingCycle.objects
+        .filter(user=user)
+        .order_by("-start_date")
+    )
+
+    selected_cycle_id = request.GET.get("cycle")
+    selected_cycle = None
+    attempts = []
+
+    if selected_cycle_id:
+        selected_cycle = get_object_or_404(
+            TrainingCycle,
+            id=selected_cycle_id,
+            user=user
+        )
+
+        start_dt = make_aware(
+            datetime.combine(selected_cycle.start_date, datetime.min.time())
+        )
+        end_dt = make_aware(
+            datetime.combine(selected_cycle.end_date, datetime.max.time())
+        )
+
+        attempts = (
+            PuzzleAttempt.objects
+            .filter(
+                user=user,
+                created_at__range=(start_dt, end_dt)
+            )
+            .order_by("-created_at")
+        )
+
+    context = {
+        "cycles": cycles,
+        "selected_cycle": selected_cycle,
+        "attempts": attempts,
+    }
+
+    return render(request, "puzzle_history.html", context)

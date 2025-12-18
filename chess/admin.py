@@ -102,16 +102,15 @@ class PuzzleAttemptAdmin(admin.ModelAdmin):
     list_display = (
         "user",
         "puzzle_id",
-        "theme",
         "solved",
         "created_at",
     )
-    list_filter = ("solved", "theme", "created_at")
+    list_filter = ("solved",  "created_at")
     search_fields = ("user__username", "puzzle_id")
     readonly_fields = ("created_at",)
-    autocomplete_fields = ("user", "theme")
+    autocomplete_fields = ("user",)
     date_hierarchy = "created_at"
-    list_select_related = ("user", "theme")
+    list_select_related = ("user",)
 
 
 @admin.register(ActiveExercise)

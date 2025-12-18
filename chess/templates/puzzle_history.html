@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Historial de puzzles{% endblock %}
+
+{% block content %}
+
+<h2>Historial de entrenamiento</h2>
+
+<form method="get">
+    <label>
+        Seleccionar ciclo:
+        <select name="cycle" onchange="this.form.submit()">
+            <option value="">-- Selecciona un ciclo --</option>
+            {% for cycle in cycles %}
+                <option
+                    value="{{ cycle.id }}"
+                    {% if selected_cycle and cycle.id == selected_cycle.id %}selected{% endif %}
+                >
+                    {{ cycle.start_date }} → {{ cycle.end_date }}
+                    ({{ cycle.completed_puzzles }}/{{ cycle.total_puzzles }})
+                </option>
+            {% endfor %}
+        </select>
+    </label>
+</form>
+
+{% if selected_cycle %}
+
+<hr>
+
+<h3>
+    Ciclo {{ selected_cycle.start_date }} → {{ selected_cycle.end_date }}
+</h3>
+
+<table>
+    <thead>
+        <tr>
+            <th>Fecha</th>
+            <th>Ver puzzle (Lichess)</th>
+            <th>Resultado</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for attempt in attempts %}
+            <tr>
+                <td>{{ attempt.created_at|date:"Y-m-d H:i" }}</td>
+                <td>
+                    <a target="_blank" href="https://lichess.org/training/{{ attempt.puzzle_id }}">{{ attempt.puzzle_id }}</a>
+                </td>
+                <td>
+                    {% if attempt.solved %}
+                        ✅
+                    {% else %}
+                        ❌
+                    {% endif %}
+                </td>
+            </tr>
+        {% empty %}
+            <tr>
+                <td colspan="4">No hay puzzles registrados en este ciclo.</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% endif %}
+
+{% endblock %}

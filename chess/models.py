@@ -169,9 +169,6 @@ class PuzzleAttempt(models.Model):
         related_name="puzzle_attempts"
     )
     puzzle_id = models.CharField(max_length=100)
-    theme = models.ForeignKey(
-        Theme, on_delete=models.SET_NULL, null=True
-    )
     solved = models.BooleanField()
     created_at = models.DateTimeField(auto_now_add=True)
 

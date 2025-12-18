@@ -10,5 +10,5 @@ urlpatterns = [
 
     # Enviar resultado del puzzle (POST)
     path("puzzle/submit/", views.submit_puzzle, name="submit_puzzle"),
-
+    path("history/", views.puzzle_history, name="puzzle_history"),
 ]
