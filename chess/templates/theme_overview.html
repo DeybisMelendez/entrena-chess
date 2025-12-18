@@ -6,19 +6,23 @@
 <h1>Temas de entrenamiento</h1>
 
 {% for category in categories %}
-<article>
+<details {% if forloop.first %}open{% endif %}>
+    <summary>
+        <strong>{{ category.name }}</strong>
 
-    <h2>
-        {{ category.name }}
-        <small class="muted">
+        <small class="muted" style="margin-left:.5rem;">
+            ({{ category.trainable_subthemes|length }} temas)
+        </small>
+
+        <span class="muted" style="margin-left:1rem;">
             Elo:
             {% if category.category_elo %}
                 {{ category.category_elo.0.elo }}
             {% else %}
                 —
             {% endif %}
-        </small>
-    </h2>
+        </span>
+    </summary>
 
     {% if category.description %}
         <p class="muted">{{ category.description }}</p>
@@ -44,7 +48,21 @@
                     </td>
                     <td>
                         {% if theme.theme_elo %}
-                            {{ theme.theme_elo.0.elo }}
+                            {% with elo=theme.theme_elo.0.elo %}
+                                {% if elo < 1400 %}
+                                    <span style="color:#d32f2f;font-weight:600;">
+                                        {{ elo }}
+                                    </span>
+                                {% elif elo < 1700 %}
+                                    <span style="color:#f9a825;font-weight:600;">
+                                        {{ elo }}
+                                    </span>
+                                {% else %}
+                                    <span style="color:#2e7d32;font-weight:600;">
+                                        {{ elo }}
+                                    </span>
+                                {% endif %}
+                            {% endwith %}
                         {% else %}
                             —
                         {% endif %}
@@ -56,8 +74,9 @@
     {% else %}
         <p class="muted">No hay temas entrenables en esta categoría.</p>
     {% endif %}
+</details>
 
-</article>
+<hr />
 {% endfor %}
 
 {% endblock %}

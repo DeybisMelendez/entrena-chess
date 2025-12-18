@@ -6,19 +6,38 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 <script type="module" src="https://unpkg.com/chessboard-element/bundled/chessboard-element.bundled.js"></script>
 
-<h3 style="text-align:center">
-    Ciclo semanal: {{ cycle.completed_puzzles }} / {{ cycle.total_puzzles }}
-</h3>
+<article>
+    <h3 style="text-align:center">
+        Ciclo semanal: {{ cycle.completed_puzzles }} / {{ cycle.total_puzzles }}
+    </h3>
 
-<p id="status" style="text-align:center"></p>
-<p id="turn-indicator" style="text-align:center;font-weight:bold"></p>
+    <p id="status" style="text-align:center"></p>
+    <div class="grid">
+        <div id="result" style="display:none">
+            <div id="elo-result" style="text-align:center; margin-top:1rem;"></div>
 
-<chess-board
-    style="width: 400px; margin: auto"
-    position="{{ puzzle.fen }}"
-    orientation="{{ puzzle.orientation }}"
-    draggable-pieces>
-</chess-board>
+            <div style="text-align:center; margin-top:1rem;">
+                <button
+                    id="next-puzzle-btn"
+                    style="display:none;"
+                    onclick="goNextPuzzle()"
+                >
+                    Siguiente puzzle
+                </button>
+            </div>
+        </div>
+
+        <div>
+            <p id="turn-indicator" style="text-align:center;font-weight:bold"></p>
+            <chess-board
+                style="width: 400px; margin: auto"
+                position="{{ puzzle.fen }}"
+                orientation="{{ puzzle.orientation }}"
+                draggable-pieces>
+            </chess-board>
+        </div>
+    </div>
+</article>
 
 <script>
 const PUZZLE_ID = "{{ puzzle.puzzle_id }}";
@@ -59,16 +78,47 @@ function highlightMove(move, color) {
     updateHighlights();
 }
 
-/* ==========================
-   Puzzle logic
-   ========================== */
-
 function updateTurnIndicator(game) {
     document.getElementById("turn-indicator").innerText =
         game.turn() === "w"
             ? "Juegan blancas"
             : "Juegan negras";
 }
+
+function showNextButton() {
+    document.getElementById("next-puzzle-btn").style.display = "inline-block";
+}
+
+function goNextPuzzle() {
+    window.location.reload();
+}
+
+function renderEloResult(changes) {
+    document.getElementById("result").style.display = "block";
+    const container = document.getElementById("elo-result");
+    if (!changes || !changes.length) return;
+
+    let html = "<strong>Resultado del puzzle</strong><br><br>";
+
+    changes.forEach(c => {
+        const delta = c.new - c.old;
+        const sign = delta >= 0 ? "+" : "";
+        const color = delta >= 0 ? "green" : "red";
+
+        html += `
+            <div>
+                ${c.name}:
+                ${c.old} → <strong>${c.new}</strong>
+                <span style="color:${color}">
+                    (${sign}${delta})
+                </span>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+}
+
 
 function submitResult(solved) {
     if (alreadySubmitted) return;
@@ -86,7 +136,12 @@ function submitResult(solved) {
         })
     })
     .then(res => res.json())
-    .then(() => setTimeout(() => location.reload(), 1000));
+    .then(data => {
+        if (data.status !== "ok") return;
+
+        renderEloResult(data.elo_changes);
+        showNextButton();
+    });
 }
 
 function puzzleInit(fen) {
@@ -109,7 +164,7 @@ function puzzleInit(fen) {
             });
 
             board.setPosition(game.fen());
-            highlightMove(move, "#2196f3"); // azul rival
+            highlightMove(move, "#2196f3");
             updateTurnIndicator(game);
             moveIndex++;
         }, 800);
@@ -160,7 +215,7 @@ function puzzleInit(fen) {
         }
 
         board.setPosition(game.fen());
-        highlightMove(move, "#ffc107"); // amarillo jugador
+        highlightMove(move, "#ffc107");
         updateTurnIndicator(game);
         moveIndex++;
 

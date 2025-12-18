@@ -160,11 +160,23 @@ def submit_puzzle(request):
     puzzle_themes = puzzle_data["themes"]
     score = 1.0 if solved else 0.0
 
+    elo_changes = []
+
     user_elo = Elo.objects.get(user=user)
+    old_general = user_elo.elo
+
     user_elo.update_elo(
         opponent_elo=puzzle_rating,
         score=score,
     )
+
+    elo_changes.append({
+        "name": "General",
+        "old": old_general,
+        "new": user_elo.elo,
+    })
+
+    themes = set()
 
     for theme_name in puzzle_themes:
         try:
@@ -172,19 +184,32 @@ def submit_puzzle(request):
         except Theme.DoesNotExist:
             continue
 
-        theme_elo = ThemeElo.objects.get(
+        themes.add(theme)
+
+    for theme in themes:
+        theme_elo, _ = ThemeElo.objects.get_or_create(
             user=user,
             theme=theme,
         )
+
+        old_elo = theme_elo.elo
+
         theme_elo.update_elo(
             opponent_elo=puzzle_rating,
             score=score,
         )
 
+        elo_changes.append({
+            "name": theme.name,
+            "old": old_elo,
+            "new": theme_elo.elo,
+        })
+
     return JsonResponse(
         {
             "status": "ok",
             "solved": solved,
+            "elo_changes": elo_changes,
         }
     )
 
