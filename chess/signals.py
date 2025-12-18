@@ -1,3 +1,10 @@
+# chess/signals.py
+
+from django.db import transaction
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from django.contrib.auth import get_user_model
+
 from .models import (
     Theme,
     ThemeElo,
@@ -6,60 +13,8 @@ from .models import (
     TrainingCycleTheme,
     Elo,
 )
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-from django.db import transaction
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-from django.db import transaction
-from django.contrib.auth import get_user_model
+
 User = get_user_model()
-
-
-@receiver(post_save, sender=TrainingPreferences)
-def create_theme_elos_for_user(sender, instance, created, **kwargs):
-    if not created:
-        return
-
-    user = instance.user
-    themes = Theme.objects.all()
-
-    if not themes.exists():
-        return
-
-    theme_elos = [
-        ThemeElo(user=user, theme=theme)
-        for theme in themes
-    ]
-
-    with transaction.atomic():
-        ThemeElo.objects.bulk_create(
-            theme_elos,
-            ignore_conflicts=True
-        )
-
-
-@receiver(post_save, sender=Theme)
-def create_theme_elos_for_theme(sender, instance, created, **kwargs):
-    if not created:
-        return
-
-    theme = instance
-    preferences = TrainingPreferences.objects.select_related("user")
-
-    theme_elos = [
-        ThemeElo(user=pref.user, theme=theme)
-        for pref in preferences
-    ]
-
-    if not theme_elos:
-        return
-
-    with transaction.atomic():
-        ThemeElo.objects.bulk_create(
-            theme_elos,
-            ignore_conflicts=True
-        )
 
 
 @receiver(post_save, sender=User)
@@ -67,15 +22,19 @@ def create_user_training_base(sender, instance, created, **kwargs):
     if not created:
         return
 
-    TrainingPreferences.objects.create(user=instance)
-    Elo.objects.create(user=instance)
+    TrainingPreferences.objects.get_or_create(user=instance)
+    Elo.objects.get_or_create(user=instance)
 
     themes = Theme.objects.all()
+    if not themes.exists():
+        return
+
     ThemeElo.objects.bulk_create(
         [
             ThemeElo(user=instance, theme=theme)
             for theme in themes
-        ]
+        ],
+        ignore_conflicts=True
     )
 
 
@@ -85,6 +44,9 @@ def create_theme_elos_for_all_users(sender, instance, created, **kwargs):
         return
 
     users = User.objects.all()
+    if not users.exists():
+        return
+
     ThemeElo.objects.bulk_create(
         [
             ThemeElo(user=user, theme=instance)
@@ -111,7 +73,7 @@ def assign_cycle_themes(sender, instance, created, **kwargs):
         .select_related("theme")
     )
 
-    if not theme_elos.exists():
+    if theme_elos.count() < 1:
         return
 
     weak_themes = theme_elos.order_by("elo")[:2]
@@ -124,23 +86,22 @@ def assign_cycle_themes(sender, instance, created, **kwargs):
         .first()
     )
 
-    with transaction.atomic():
-        objs = [
+    objs = [
+        TrainingCycleTheme(
+            cycle=instance,
+            theme=theme_elo.theme,
+            priority=priority
+        )
+        for priority, theme_elo in enumerate(weak_themes, start=1)
+    ]
+
+    if strong_theme:
+        objs.append(
             TrainingCycleTheme(
                 cycle=instance,
-                theme=theme_elo.theme,
-                priority=priority
+                theme=strong_theme.theme,
+                priority=3
             )
-            for priority, theme_elo in enumerate(weak_themes, start=1)
-        ]
+        )
 
-        if strong_theme:
-            objs.append(
-                TrainingCycleTheme(
-                    cycle=instance,
-                    theme=strong_theme.theme,
-                    priority=3
-                )
-            )
-
-        TrainingCycleTheme.objects.bulk_create(objs)
+    TrainingCycleTheme.objects.bulk_create(objs)
