@@ -20,18 +20,18 @@
             <span>En progreso</span>
         {% endif %}
         <br>
-        <strong>Temas a entrenar:</strong>
 
-        {% if weak_themes %}
-            <ul>
-                {% for theme in weak_themes %}
-                    <li>
-                        {{ theme.theme.name }} — Elo {{ theme.elo }}
-                    </li>
-                {% endfor %}
-            </ul>
+        {% if cycle_themes %}
+        <strong>Temas a entrenar:</strong>
+        <ul>
+            {% for theme in cycle_themes %}
+                <li>
+                    {{ theme.theme.name }}
+                </li>
+            {% endfor %}
+        </ul>
         {% else %}
-            <p class="muted">No se detectan debilidades claras por ahora.</p>
+        <p class="muted">No se detectan debilidades claras por ahora.</p>
         {% endif %}
     </article>
 </section>
@@ -61,6 +61,7 @@
                 {{opening.theme.name}}: {{ opening.elo }}<br>
                 {{middlegame.theme.name}}: {{ middlegame.elo }}<br>
                 {{endgame.theme.name}}: {{ endgame.elo }}<br>
+                {{mate.theme.name}}: {{mate.elo}}
             </p>
         </article>
     </div>

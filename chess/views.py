@@ -228,18 +228,15 @@ def home(request):
 
     user_elo = Elo.objects.get(user=user)
 
-    weak_themes = (
-        ThemeElo.objects
-        .filter(user=user)
-        .select_related("theme")
-        .order_by("elo")[:2]
-    )
+    cycle_themes = TrainingCycleTheme.objects.filter(cycle=cycle)
     opening_elo = ThemeElo.objects.get(
         user=user, theme__lichess_name="opening")
     middlegame_elo = ThemeElo.objects.get(
         user=user, theme__lichess_name="middlegame")
     endgame_elo = ThemeElo.objects.get(
         user=user, theme__lichess_name="endgame")
+    mate_elo = ThemeElo.objects.get(
+        user=user, theme__lichess_name="mate")
 
     context = {
         "cycle": cycle,
@@ -249,7 +246,8 @@ def home(request):
         "opening": opening_elo,
         "middlegame": middlegame_elo,
         "endgame": endgame_elo,
-        "weak_themes": weak_themes,
+        "mate": mate_elo,
+        "cycle_themes": cycle_themes,
     }
 
     return render(request, "home.html", context)
