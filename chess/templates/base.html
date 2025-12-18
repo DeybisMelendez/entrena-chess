@@ -10,6 +10,7 @@
     
 </head>
 <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+    {% include 'nav.html' %}
     <main class="container">
         {% block content %}
         {% endblock %}

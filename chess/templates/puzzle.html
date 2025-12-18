@@ -6,19 +6,12 @@
 <script type="module" src="https://unpkg.com/chessboard-element/bundled/chessboard-element.bundled.js"></script>
 
 <h3>
-    Ciclo semanal: {{ cycle.completed }} / {{ cycle.total }}
+    Ciclo semanal: {{ cycle.completed_puzzles }} / {{ cycle.total_puzzles }}
 </h3>
-<p>Temas:</p>
-<ul>
-{% for theme in themes %}
-<li>{{theme.theme.name}} </li>
-{% endfor %}
-</ul>
 
-
-<p id="status"></p>
+<p id="status"style="text-align:center"></p>
 <chess-board
-    style="width: 420px"
+    style="width: 400px;margin:auto"
     position="{{ puzzle.fen }}"
     orientation="{{ puzzle.orientation }}"
     draggable-pieces>
@@ -53,7 +46,7 @@ function submitResult(solved) {
         if (data.status === "ok") {
             setTimeout(() => {
                 window.location.reload();
-            }, 800);
+            }, 1000);
         } else {
             alert(data.message || "Error al enviar el resultado");
         }
@@ -79,7 +72,7 @@ function puzzleInit(fen) {
             game.move({ from: m.slice(0,2), to: m.slice(2,4), promotion: "q" });
             board.setPosition(game.fen());
             moveIndex++;
-        }, 600);
+        }, 1000);
     }
 
     board.addEventListener('drag-start', (e) => {
@@ -144,7 +137,7 @@ function puzzleInit(fen) {
             game.move({ from: m.slice(0,2), to: m.slice(2,4), promotion: "q" });
             board.setPosition(game.fen());
             moveIndex++;
-        }, 600);
+        }, 1000);
     });
 
     board.addEventListener('snap-end', () => {
