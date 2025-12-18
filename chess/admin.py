@@ -1,6 +1,5 @@
 from django.contrib import admin
 from django.contrib.auth import get_user_model
-
 from .models import (
     TrainingPreferences,
     Theme,
@@ -8,7 +7,6 @@ from .models import (
     TrainingCycleTheme,
     Elo,
     ThemeElo,
-    DailyProgress,
     PuzzleAttempt,
     ActiveExercise,
     RetryPuzzle,
@@ -26,9 +24,77 @@ class TrainingPreferencesAdmin(admin.ModelAdmin):
 
 @admin.register(Theme)
 class ThemeAdmin(admin.ModelAdmin):
-    list_display = ("name", "lichess_name", "is_trainable")
-    search_fields = ("name", "lichess_name", "is_trainable")
-    ordering = ("name",)
+    list_display = (
+        "name",
+        "parent",
+        "is_trainable",
+        "lichess_name",
+    )
+
+    list_filter = (
+        "is_trainable",
+        "parent",
+    )
+
+    search_fields = (
+        "name",
+        "lichess_name",
+    )
+
+    ordering = ("parent__name", "name")
+
+    autocomplete_fields = ("parent",)
+
+    fieldsets = (
+        (
+            "Información básica",
+            {
+                "fields": (
+                    "name",
+                    "description",
+                )
+            },
+        ),
+        (
+            "Jerarquía",
+            {
+                "fields": (
+                    "parent",
+                    "is_trainable",
+                ),
+                "description": (
+                    "Una categoría es un Theme sin parent y no entrenable. "
+                    "Un tema entrenable debe tener una categoría padre."
+                ),
+            },
+        ),
+        (
+            "Integración con Lichess",
+            {
+                "fields": (
+                    "lichess_name",
+                ),
+                "description": (
+                    "Solo aplica a temas entrenables."
+                ),
+            },
+        ),
+    )
+
+    def get_readonly_fields(self, request, obj=None):
+        """
+        Evita editar lichess_name en categorías
+        """
+        if obj and not obj.is_trainable:
+            return ("lichess_name",)
+        return ()
+
+    def get_queryset(self, request):
+        """
+        Optimiza queries en admin (parent)
+        """
+        qs = super().get_queryset(request)
+        return qs.select_related("parent")
 
 
 class TrainingCycleThemeInline(admin.TabularInline):
@@ -86,15 +152,6 @@ class ThemeEloAdmin(admin.ModelAdmin):
     readonly_fields = ("last_updated",)
     autocomplete_fields = ("user", "theme")
     list_select_related = ("user", "theme")
-
-
-@admin.register(DailyProgress)
-class DailyProgressAdmin(admin.ModelAdmin):
-    list_display = ("user", "date", "solved", "failed")
-    list_filter = ("date",)
-    search_fields = ("user__username", "user__email")
-    autocomplete_fields = ("user",)
-    date_hierarchy = "date"
 
 
 @admin.register(PuzzleAttempt)

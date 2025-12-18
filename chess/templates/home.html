@@ -3,13 +3,9 @@
 
 {% block content %}
 
-<section>
-    <h1>Bienvenido, {{ user.username }} - Elo {{ elo.elo }}</h1>
-</section>
-
-<section>
-    <h2>Ciclo de entrenamiento actual</h2>
-
+<h1>Bienvenido, {{ user.username }} - Elo {{ elo.elo }}</h1>
+<h2>Ciclo de entrenamiento actual</h2>
+<section class="grid">
     <article>
         <strong>Periodo:</strong> {{ cycle.start_date }} – {{ cycle.end_date }}<br>
         <strong>Ejercicios completados:</strong> {{ cycle.completed_puzzles }} / {{ cycle.total_puzzles }}<br>
@@ -34,36 +30,15 @@
         <p class="muted">No se detectan debilidades claras por ahora.</p>
         {% endif %}
     </article>
-</section>
-
-<section>
-    <h2>Resumen rápido</h2>
-    <div class="grid">
-        <article>
-            <h3>Hoy</h3>
-            <p>
-                ✔ Resueltos: {{ today.solved }}<br>
-                ✘ Fallidos: {{ today.failed }}
-            </p>
-        </article>
-
-        <article>
-            <h3>Ciclo</h3>
-            <p>
-                ✔ Resueltos: {{ week.solved }}<br>
-                ✘ Fallidos: {{ week.failed }}
-            </p>
-        </article>
-        <article>
-            <h3>Elo {{ elo.elo }}</h3>
-            <p>
-                {{opening.theme.name}}: {{ opening.elo }}<br>
-                {{middlegame.theme.name}}: {{ middlegame.elo }}<br>
-                {{endgame.theme.name}}: {{ endgame.elo }}<br>
-                {{mate.theme.name}}: {{mate.elo}}
-            </p>
-        </article>
-    </div>
+    <article>
+        <h3>Elo {{ elo.elo }}</h3>
+        <p>
+            {{opening.theme.name}}: {{ opening.elo }}<br>
+            {{middlegame.theme.name}}: {{ middlegame.elo }}<br>
+            {{endgame.theme.name}}: {{ endgame.elo }}<br>
+            {{mate.theme.name}}: {{mate.elo}}
+        </p>
+    </article>
 </section>
 
 {% endblock %}

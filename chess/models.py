@@ -1,6 +1,8 @@
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
+from django.core.exceptions import ValidationError
+
 import math
 
 
@@ -18,18 +20,54 @@ class TrainingPreferences(models.Model):
 
 class Theme(models.Model):
     name = models.CharField(max_length=100, unique=True)
-    lichess_name = models.CharField(max_length=100, unique=True)
-    is_trainable = models.BooleanField(
-        default=True,
-        help_text="Indica si el tema puede ser asignado a ciclos de entrenamiento"
-    )
-    description = models.TextField(
+    lichess_name = models.CharField(
+        max_length=100,
+        unique=True,
+        null=True,
         blank=True,
-        help_text="Descripción del tema y qué habilidad desarrolla"
+        help_text="Nombre del tema en Lichess (solo para temas entrenables)"
     )
 
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="subthemes",
+        help_text="Categoría padre (otro Theme)"
+    )
+
+    is_trainable = models.BooleanField(
+        default=True,
+        help_text="Indica si el tema puede ser entrenado directamente"
+    )
+
+    description = models.TextField(
+        blank=True,
+        help_text="Descripción del tema o categoría"
+    )
+
+    def clean(self):
+        if self.parent is None and self.is_trainable:
+            raise ValidationError(
+                "Un tema entrenable debe tener una categoría padre."
+            )
+
+        if self.parent and not self.parent.is_trainable:
+            pass  # OK, parent es categoría
+
+        if self.parent and self.parent.parent:
+            raise ValidationError(
+                "Solo se permite un nivel de jerarquía (categoría → tema)."
+            )
+
+    class Meta:
+        ordering = ["name"]
+
     def __str__(self):
-        return f"{self.name} ({self.lichess_name})"
+        if self.parent:
+            return f"{self.parent.name} → {self.name}"
+        return self.name
 
 
 class TrainingCycle(models.Model):
@@ -138,25 +176,6 @@ class ThemeElo(BaseElo):
 
     def __str__(self):
         return f"{self.user} - {self.theme}: {self.elo}"
-
-
-class DailyProgress(models.Model):
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="daily_progress"
-    )
-    date = models.DateField()
-    solved = models.PositiveIntegerField(default=0)
-    failed = models.PositiveIntegerField(default=0)
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["user", "date"],
-                name="unique_user_day"
-            )
-        ]
 
 
 class PuzzleAttempt(models.Model):

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Temas de entrenamiento{% endblock %}
+
+{% block content %}
+
+<h1>Temas de entrenamiento</h1>
+
+{% for category in categories %}
+<article>
+
+    <h2>
+        {{ category.name }}
+        <small class="muted">
+            Elo:
+            {% if category.category_elo %}
+                {{ category.category_elo.0.elo }}
+            {% else %}
+                —
+            {% endif %}
+        </small>
+    </h2>
+
+    {% if category.description %}
+        <p class="muted">{{ category.description }}</p>
+    {% endif %}
+
+    {% if category.trainable_subthemes %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Tema</th>
+                    <th>Elo</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for theme in category.trainable_subthemes %}
+                <tr>
+                    <td>
+                        <strong>{{ theme.name }}</strong>
+                        {% if theme.description %}
+                            <br>
+                            <small class="muted">{{ theme.description }}</small>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if theme.theme_elo %}
+                            {{ theme.theme_elo.0.elo }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="muted">No hay temas entrenables en esta categoría.</p>
+    {% endif %}
+
+</article>
+{% endfor %}
+
+{% endblock %}

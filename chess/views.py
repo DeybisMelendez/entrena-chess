@@ -1,7 +1,7 @@
 from datetime import date
 import json
 import random
-
+from django.utils import timezone
 from django.contrib.auth.decorators import login_required
 from django.db.models import Sum
 from django.http import JsonResponse, Http404
@@ -9,12 +9,13 @@ from django.shortcuts import render, get_object_or_404
 from django.views.decorators.http import require_POST
 from django.utils.timezone import make_aware
 from datetime import datetime
+from django.db.models import Count, Q
+from django.db.models import Prefetch
 from .models import (
     TrainingPreferences,
     TrainingCycle,
     TrainingCycleTheme,
     ThemeElo,
-    DailyProgress,
     PuzzleAttempt,
     ActiveExercise,
     RetryPuzzle,
@@ -129,17 +130,11 @@ def submit_puzzle(request):
         solved=solved,
     )
 
-    daily, _ = DailyProgress.objects.get_or_create(
-        user=user,
-        date=today,
-    )
-
     if solved:
         RetryPuzzle.objects.filter(
             user=user,
             puzzle_id=puzzle_id,
         ).delete()
-        daily.solved += 1
     else:
         retry, _ = RetryPuzzle.objects.get_or_create(
             user=user,
@@ -147,9 +142,6 @@ def submit_puzzle(request):
         )
         retry.fail_count += 1
         retry.save(update_fields=["fail_count", "last_attempt_at"])
-        daily.failed += 1
-
-    daily.save(update_fields=["solved", "failed"])
 
     cycle = TrainingCycle.objects.filter(
         user=user,
@@ -214,19 +206,6 @@ def home(request):
         }
     )
 
-    today_progress, _ = DailyProgress.objects.get_or_create(
-        user=user,
-        date=today,
-    )
-
-    week_progress = DailyProgress.objects.filter(
-        user=user,
-        date__range=(start_date, end_date),
-    ).aggregate(
-        solved=Sum("solved"),
-        failed=Sum("failed"),
-    )
-
     user_elo = Elo.objects.get(user=user)
 
     cycle_themes = TrainingCycleTheme.objects.filter(cycle=cycle)
@@ -241,8 +220,6 @@ def home(request):
 
     context = {
         "cycle": cycle,
-        "today": today_progress,
-        "week": week_progress,
         "elo": user_elo,
         "opening": opening_elo,
         "middlegame": middlegame_elo,
@@ -298,3 +275,43 @@ def puzzle_history(request):
     }
 
     return render(request, "puzzle_history.html", context)
+
+
+@login_required
+def theme_overview(request):
+    user = request.user
+
+    user_theme_elos = ThemeElo.objects.filter(user=user)
+
+    categories = (
+        Theme.objects
+        .filter(parent__isnull=True)
+        .prefetch_related(
+            # Elo de la categoría
+            Prefetch(
+                "themeelo_set",
+                queryset=user_theme_elos,
+                to_attr="category_elo"
+            ),
+            # Subtemas entrenables + su Elo
+            Prefetch(
+                "subthemes",
+                queryset=Theme.objects.filter(is_trainable=True)
+                .prefetch_related(
+                    Prefetch(
+                        "themeelo_set",
+                        queryset=user_theme_elos,
+                        to_attr="theme_elo"
+                    )
+                ),
+                to_attr="trainable_subthemes"
+            )
+        )
+        .order_by("name")
+    )
+
+    return render(
+        request,
+        "theme_overview.html",
+        {"categories": categories}
+    )
