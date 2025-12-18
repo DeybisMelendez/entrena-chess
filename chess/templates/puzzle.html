@@ -6,17 +6,23 @@
 <script type="module" src="https://unpkg.com/chessboard-element/bundled/chessboard-element.bundled.js"></script>
 
 <h3>
-    Ciclo semanal: {{ cycle.completed_exercises }} / {{ cycle.total_exercises }}
+    Ciclo semanal: {{ cycle.completed }} / {{ cycle.total }}
 </h3>
+<p>Temas:</p>
+<ul>
+{% for theme in themes %}
+<li>{{theme.theme.name}} </li>
+{% endfor %}
+</ul>
 
+
+<p id="status"></p>
 <chess-board
     style="width: 420px"
     position="{{ puzzle.fen }}"
     orientation="{{ puzzle.orientation }}"
     draggable-pieces>
 </chess-board>
-
-<p id="status"></p>
 
 <script>
 const PUZZLE_ID = "{{ puzzle.puzzle_id }}";

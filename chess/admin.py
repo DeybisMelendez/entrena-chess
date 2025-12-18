@@ -20,7 +20,7 @@ User = get_user_model()
 
 @admin.register(TrainingPreferences)
 class TrainingPreferencesAdmin(admin.ModelAdmin):
-    list_display = ("user", "puzzles_per_cycle", "time_limit_seconds")
+    list_display = ("user", "puzzles_per_cycle")
     search_fields = ("user__username", "user__email")
 
 
@@ -42,8 +42,8 @@ class TrainingCycleAdmin(admin.ModelAdmin):
         "user",
         "start_date",
         "end_date",
-        "total_exercises",
-        "completed_exercises",
+        "total",
+        "completed",
         "created_at",
     )
     list_filter = ("start_date", "end_date")
@@ -100,7 +100,6 @@ class PuzzleAttemptAdmin(admin.ModelAdmin):
         "puzzle_id",
         "theme_origin",
         "solved",
-        "time_spent",
         "created_at",
     )
     list_filter = ("solved", "theme_origin", "created_at")
@@ -110,9 +109,9 @@ class PuzzleAttemptAdmin(admin.ModelAdmin):
 
 @admin.register(ActiveExercise)
 class ActiveExerciseAdmin(admin.ModelAdmin):
-    list_display = ("user", "puzzle_id", "assigned_at")
+    list_display = ("user", "puzzle_id", "created_at")
     search_fields = ("user__username", "puzzle_id")
-    readonly_fields = ("assigned_at",)
+    readonly_fields = ("created_at",)
 
 
 @admin.register(PuzzleTraining)

@@ -4,7 +4,7 @@
 {% block content %}
 
 <section>
-    <h1>Bienvenido, {{ user.username }}</h1>
+    <h1>Bienvenido, {{ user.username }} - Elo {{ elo.elo }}</h1>
 </section>
 
 <section>
@@ -44,25 +44,17 @@
                 ✘ Fallidos: {{ week.failed }}
             </p>
         </article>
-
-        <article>
-            <h3>Elo promedio</h3>
-            <p>
-                {{ average_elo }}
-            </p>
-        </article>
     </div>
 </section>
 
-<!-- Temas a reforzar -->
 <section>
-    <h2>Temas prioritarios</h2>
+    <h2>Temas a entrenar</h2>
 
     {% if weak_themes %}
         <ul>
             {% for theme in weak_themes %}
                 <li>
-                    {{ theme.name }} — Elo {{ theme.elo }}
+                    {{ theme.theme.name }} — Elo {{ theme.elo }}
                 </li>
             {% endfor %}
         </ul>

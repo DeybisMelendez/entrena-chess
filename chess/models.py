@@ -11,15 +11,13 @@ class TrainingPreferences(models.Model):
 
     puzzles_per_cycle = models.PositiveIntegerField(default=105)
 
-    time_limit_seconds = models.PositiveIntegerField(
-        default=60,
-        help_text="Tiempo máximo en segundos para resolver un puzzle"
-    )
-
 
 class Theme(models.Model):
     name = models.CharField(max_length=100, unique=True)
     lichess_name = models.CharField(max_length=100, unique=True)
+
+    def __str__(self):
+        return f"{self.name} - {self.lichess_name}"
 
 
 class TrainingCycle(models.Model):
@@ -34,11 +32,11 @@ class TrainingCycle(models.Model):
     start_date = models.DateField(default=timezone.now)
     end_date = models.DateField()
 
-    total_exercises = models.PositiveIntegerField(
+    total = models.PositiveIntegerField(
         help_text="Cantidad total de ejercicios del ciclo"
     )
 
-    completed_exercises = models.PositiveIntegerField(default=0)
+    completed = models.PositiveIntegerField(default=0)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -187,7 +185,6 @@ class PuzzleAttempt(models.Model):
     theme_origin = models.ForeignKey(
         Theme, on_delete=models.SET_NULL, null=True)
     solved = models.BooleanField()
-    time_spent = models.PositiveIntegerField(help_text="Tiempo en segundos")
     created_at = models.DateTimeField(auto_now_add=True)
 
 
@@ -203,7 +200,7 @@ class ActiveExercise(models.Model):
     )
 
     puzzle_id = models.CharField(max_length=100)
-    assigned_at = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(auto_now_add=True)
 
 
 class PuzzleTraining(models.Model):

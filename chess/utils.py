@@ -7,7 +7,7 @@ def get_week_cycle_dates(today):
     Devuelve (start_date, end_date) del ciclo semanal lunes-viernes
     """
     start = today - timedelta(days=today.weekday())  # lunes
-    end = start + timedelta(days=4)                   # viernes
+    end = start + timedelta(days=6)                   # domingo
     return start, end
 
 
