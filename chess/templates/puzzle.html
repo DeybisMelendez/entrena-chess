@@ -172,7 +172,7 @@ function puzzleInit(fen) {
             const move = game.move({
                 from: m.slice(0, 2),
                 to: m.slice(2, 4),
-                promotion: getPromotionPiece()
+                promotion: m.length === 5 ? m[4] : undefined
             });
 
             board.setPosition(game.fen());
@@ -209,7 +209,7 @@ function puzzleInit(fen) {
         const move = game.move({
             from: source,
             to: target,
-            promotion: "q"
+            promotion: getPromotionPiece()
         });
 
         if (!move) {
@@ -243,7 +243,7 @@ function puzzleInit(fen) {
             const reply = game.move({
                 from: m.slice(0, 2),
                 to: m.slice(2, 4),
-                promotion: "q"
+                promotion: m.length === 5 ? m[4] : undefined
             });
 
             board.setPosition(game.fen());
