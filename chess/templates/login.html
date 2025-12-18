@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Login{% endblock %}
+
+{% block content %}
+
+<article style="max-width: 420px; margin: auto;">
+    <header>
+        <h3>Iniciar sesión</h3>
+    </header>
+
+    {% if form.errors %}
+        <small style="color: var(--pico-color-red-500);">
+            Usuario o contraseña incorrectos
+        </small>
+    {% endif %}
+
+    <form method="post">
+        {% csrf_token %}
+
+        <label>
+            Usuario
+            <input
+                type="text"
+                name="username"
+                required
+                autofocus
+            >
+        </label>
+
+        <label>
+            Contraseña
+            <input
+                type="password"
+                name="password"
+                required
+            >
+        </label>
+
+        <button type="submit">
+            Entrar
+        </button>
+    </form>
+</article>
+
+{% endblock %}
