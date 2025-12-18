@@ -120,6 +120,77 @@ class LichessDB:
             "openings": opening_list,
         }
 
+    def get_puzzle_by_id(self, puzzle_id):
+        """
+        Obtiene un puzzle específico por su puzzle_id.
+        Devuelve la misma estructura que get_random_puzzle.
+        """
+        conn = self.connect()
+        cursor = conn.cursor()
+
+        # Obtener datos principales del puzzle
+        cursor.execute("""
+            SELECT puzzle_id, fen, moves, rating
+            FROM puzzles
+            WHERE puzzle_id = ?
+            LIMIT 1
+        """, (puzzle_id,))
+
+        row = cursor.fetchone()
+
+        if not row:
+            conn.close()
+            return None
+
+        # Obtener temas del puzzle
+        cursor.execute("""
+            SELECT t.name
+            FROM themes t
+            JOIN puzzle_themes pt ON pt.theme_id = t.id
+            WHERE pt.puzzle_id = ?
+        """, (puzzle_id,))
+        theme_list = [x[0] for x in cursor.fetchall()]
+
+        # Obtener aperturas del puzzle
+        cursor.execute("""
+            SELECT o.name
+            FROM openings o
+            JOIN puzzle_openings po ON po.opening_id = o.id
+            WHERE po.puzzle_id = ?
+        """, (puzzle_id,))
+        opening_list = [x[0] for x in cursor.fetchall()]
+
+        conn.close()
+
+        return {
+            "puzzle_id": row[0],
+            "fen": row[1],
+            "moves": row[2].split(),
+            "rating": row[3],
+            "orientation": self.get_board_orientation(row[1]),
+            "themes": theme_list,
+            "openings": opening_list,
+        }
+
+    def get_puzzle_themes(self, puzzle_id):
+        """
+        Retorna la lista de nombres de temas asociados a un puzzle_id.
+        """
+        conn = self.connect()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT t.name
+            FROM themes t
+            JOIN puzzle_themes pt ON pt.theme_id = t.id
+            WHERE pt.puzzle_id = ?
+        """, (puzzle_id,))
+
+        themes = [row[0] for row in cursor.fetchall()]
+
+        conn.close()
+        return themes
+
     # ---------------------------------------------------------------------
     # CONSULTAS AUXILIARES
     # ---------------------------------------------------------------------

@@ -2,9 +2,15 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    # Vista que devuelve el puzzle en JSON
-    path("get-puzzle/", views.get_puzzle, name="get_puzzle"),
+    # Home / Dashboard
+    path("", views.home, name="home"),
 
-    # Vista que renderiza la página donde probarás HTMX
-    path("", views.watch_puzzle, name="watch_puzzle"),
+    # Obtener y mostrar el puzzle actual (GET)
+    path("puzzle/", views.get_puzzle, name="get_puzzle"),
+
+    # Enviar resultado del puzzle (POST)
+    path("puzzle/submit/", views.submit_puzzle, name="submit_puzzle"),
+
+    # Vista de prueba / sandbox
+    path("prueba/", views.watch_puzzle, name="watch_puzzle"),
 ]

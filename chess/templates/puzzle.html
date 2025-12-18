@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Inicio | Mi Entrenamiento{% endblock %}
+
+{% block content %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script type="module" src="https://unpkg.com/chessboard-element/bundled/chessboard-element.bundled.js"></script>
+
+<h3>
+    Ciclo semanal: {{ cycle.completed_exercises }} / {{ cycle.total_exercises }}
+</h3>
+
+<chess-board
+    style="width: 420px"
+    position="{{ puzzle.fen }}"
+    orientation="{{ puzzle.orientation }}"
+    draggable-pieces>
+</chess-board>
+
+<p id="status"></p>
+
+<script>
+const PUZZLE_ID = "{{ puzzle.puzzle_id }}";
+const SUBMIT_URL = "{% url 'submit_puzzle' %}";
+const CSRF_TOKEN = "{{ csrf_token }}";
+
+let alreadySubmitted = false;
+</script>
+
+<script>
+function submitResult(solved) {
+    if (alreadySubmitted) return;
+    alreadySubmitted = true;
+
+    fetch(SUBMIT_URL, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": CSRF_TOKEN
+        },
+        body: JSON.stringify({
+            puzzle_id: PUZZLE_ID,
+            solved: solved
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status === "ok") {
+            setTimeout(() => {
+                window.location.reload();
+            }, 800);
+        } else {
+            alert(data.message || "Error al enviar el resultado");
+        }
+    });
+}
+</script>
+
+<script>
+function puzzleInit(fen) {
+    const board = document.querySelector('chess-board');
+    const game = new Chess(fen);
+
+    const solutionMoves = {{ puzzle.moves|safe }};
+    let moveIndex = 0;
+    let puzzleFailed = false;
+
+    document.getElementById("status").innerText = "Resuelve el puzzle";
+
+    // Jugada inicial del rival
+    if (solutionMoves[moveIndex]) {
+        setTimeout(() => {
+            const m = solutionMoves[moveIndex];
+            game.move({ from: m.slice(0,2), to: m.slice(2,4), promotion: "q" });
+            board.setPosition(game.fen());
+            moveIndex++;
+        }, 600);
+    }
+
+    board.addEventListener('drag-start', (e) => {
+        const { piece } = e.detail;
+
+        if (puzzleFailed || game.game_over()) {
+            e.preventDefault();
+            return;
+        }
+
+        if ((game.turn() === 'w' && piece.startsWith('b')) ||
+            (game.turn() === 'b' && piece.startsWith('w'))) {
+            e.preventDefault();
+        }
+    });
+
+    board.addEventListener('drop', (e) => {
+        const { source, target, setAction } = e.detail;
+
+        if (puzzleFailed) {
+            setAction("snapback");
+            return;
+        }
+
+        const attempted = source + target;
+        const expected = solutionMoves[moveIndex];
+
+        const move = game.move({
+            from: source,
+            to: target,
+            promotion: "q"
+        });
+
+        if (!move) {
+            setAction("snapback");
+            return;
+        }
+
+        if (attempted !== expected) {
+            puzzleFailed = true;
+            game.undo();
+            setAction("snapback");
+
+            document.getElementById("status").innerText = "❌ Movimiento incorrecto";
+            submitResult(false);
+            return;
+        }
+
+        board.setPosition(game.fen());
+        moveIndex++;
+
+        // ¿Puzzle terminado?
+        if (!solutionMoves[moveIndex]) {
+            document.getElementById("status").innerText = "✅ Puzzle resuelto";
+            submitResult(true);
+            return;
+        }
+
+        // Juega el rival
+        setTimeout(() => {
+            const m = solutionMoves[moveIndex];
+            game.move({ from: m.slice(0,2), to: m.slice(2,4), promotion: "q" });
+            board.setPosition(game.fen());
+            moveIndex++;
+        }, 600);
+    });
+
+    board.addEventListener('snap-end', () => {
+        board.setPosition(game.fen());
+    });
+}
+
+puzzleInit("{{ puzzle.fen }}");
+</script>
+{% endblock %}
