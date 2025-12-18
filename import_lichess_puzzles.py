@@ -5,12 +5,11 @@ from pathlib import Path
 # ----- CONFIG -----
 CSV_FILE = "lichess_db_puzzle.csv"
 SQLITE_FILE = "lichess_puzzles.sqlite3"
-rating_deviation_threshold = 76
+rating_deviation_threshold = 77
 BATCH_SIZE = 5000
-# -------------------
+
 
 def create_tables(cursor):
-    # Crear tablas principales y tablas puente
     cursor.executescript("""
         CREATE TABLE IF NOT EXISTS puzzles (
             puzzle_id TEXT PRIMARY KEY,
@@ -24,11 +23,6 @@ def create_tables(cursor):
             name TEXT UNIQUE NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS openings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL
-        );
-
         CREATE TABLE IF NOT EXISTS puzzle_themes (
             puzzle_id TEXT,
             theme_id INTEGER,
@@ -36,26 +30,20 @@ def create_tables(cursor):
             FOREIGN KEY (puzzle_id) REFERENCES puzzles(puzzle_id),
             FOREIGN KEY (theme_id) REFERENCES themes(id)
         );
-
-        CREATE TABLE IF NOT EXISTS puzzle_openings (
-            puzzle_id TEXT,
-            opening_id INTEGER,
-            PRIMARY KEY (puzzle_id, opening_id),
-            FOREIGN KEY (puzzle_id) REFERENCES puzzles(puzzle_id),
-            FOREIGN KEY (opening_id) REFERENCES openings(id)
-        );
     """)
 
 
 def get_or_create(cursor, table, name):
-    """Inserta un valor único y devuelve su id (tema o apertura)."""
     cursor.execute(f"SELECT id FROM {table} WHERE name = ?", (name,))
     row = cursor.fetchone()
 
     if row:
         return row[0]
 
-    cursor.execute(f"INSERT INTO {table} (name) VALUES (?)", (name,))
+    cursor.execute(
+        f"INSERT INTO {table} (name) VALUES (?)",
+        (name,)
+    )
     return cursor.lastrowid
 
 
@@ -80,8 +68,7 @@ def convert_csv_to_sqlite():
         reader = csv.DictReader(f)
 
         for row in reader:
-
-            # Filtrar puzzles inestables
+            # ---- Filtrar puzzles inestables ----
             try:
                 if int(row["RatingDeviation"]) >= rating_deviation_threshold:
                     skipped += 1
@@ -95,14 +82,23 @@ def convert_csv_to_sqlite():
             moves = row["Moves"]
             rating = int(row["Rating"])
 
-            # Insertar puzzle
+            # ---- Insertar puzzle ----
             cursor.execute("""
                 INSERT OR REPLACE INTO puzzles (puzzle_id, fen, moves, rating)
                 VALUES (?, ?, ?, ?)
             """, (puzzle_id, fen, moves, rating))
 
-            # ----- Procesar temas -----
-            themes = row["Themes"].split()
+            # ---- Procesar THEMES ----
+            themes = set()
+
+            # Themes tácticos / estratégicos
+            for theme in row["Themes"].split():
+                themes.add(theme)
+
+            # Aperturas como themes
+            for opening in row["OpeningTags"].split():
+                themes.add(opening)
+
             for theme in themes:
                 theme_id = get_or_create(cursor, "themes", theme)
                 cursor.execute("""
@@ -110,18 +106,9 @@ def convert_csv_to_sqlite():
                     VALUES (?, ?)
                 """, (puzzle_id, theme_id))
 
-            # ----- Procesar aperturas -----
-            openings = row["OpeningTags"].split()
-            for opening in openings:
-                opening_id = get_or_create(cursor, "openings", opening)
-                cursor.execute("""
-                    INSERT OR IGNORE INTO puzzle_openings (puzzle_id, opening_id)
-                    VALUES (?, ?)
-                """, (puzzle_id, opening_id))
-
             total += 1
 
-            if total % 5000 == 0:
+            if total % BATCH_SIZE == 0:
                 conn.commit()
                 print(f"{total} puzzles procesados...")
 
@@ -129,7 +116,7 @@ def convert_csv_to_sqlite():
     conn.close()
 
     print("==========================================")
-    print(f"Importación terminada")
+    print("Importación terminada")
     print(f"Puzzles insertados: {total}")
     print(f"Puzzles descartados: {skipped}")
     print(f"Base SQLite creada: {SQLITE_FILE}")
