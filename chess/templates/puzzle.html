@@ -20,7 +20,6 @@
                 <button
                     id="next-puzzle-btn"
                     style="display:none;"
-                    onclick="goNextPuzzle()"
                 >
                     Siguiente puzzle
                 </button>
@@ -30,7 +29,7 @@
         <div>
             <p id="turn-indicator" style="text-align:center;font-weight:bold"></p>
             <chess-board
-                style="width: 400px; margin: auto"
+                style="width: 100%;max-width:400px; margin: auto"
                 position="{{ puzzle.fen }}"
                 orientation="{{ puzzle.orientation }}"
                 draggable-pieces>
@@ -50,217 +49,227 @@
 </article>
 
 <script>
-const PUZZLE_ID = "{{ puzzle.puzzle_id }}";
-const SUBMIT_URL = "{% url 'submit_puzzle' %}";
-const CSRF_TOKEN = "{{ csrf_token }}";
-let alreadySubmitted = false;
+document.addEventListener("DOMContentLoaded", () => {
 
-function getPromotionPiece() {
-    return document.getElementById("promotion-select").value || "q";
-}
+    const PuzzleApp = (() => {
 
+        /* =======================
+         * Constantes del backend
+         * ======================= */
+        const PUZZLE_ID = "{{ puzzle.puzzle_id }}";
+        const SUBMIT_URL = "{% url 'submit_puzzle' %}";
+        const CSRF_TOKEN = "{{ csrf_token }}";
+        const SOLUTION = {{ puzzle.moves|safe }};
+        const FEN = "{{ puzzle.fen|escapejs }}";
 
-const board = document.querySelector("chess-board");
-const highlightStyles = document.createElement("style");
-document.head.appendChild(highlightStyles);
+        /* =======================
+         * Estado interno
+         * ======================= */
+        let game;
+        let moveIndex = 0;
+        let failed = false;
+        let submitted = false;
 
-let styles = [];
+        /* =======================
+         * Cache del DOM
+         * ======================= */
+        const board = document.querySelector("chess-board");
+        const statusEl = document.getElementById("status");
+        const turnEl = document.getElementById("turn-indicator");
+        const nextBtn = document.getElementById("next-puzzle-btn");
+        const resultBox = document.getElementById("result");
+        const eloBox = document.getElementById("elo-result");
+        const promotionSelect = document.getElementById("promotion-select");
 
-function updateHighlights() {
-    highlightStyles.textContent = styles.join("\n");
-}
+        /* =======================
+         * Highlight de movimientos
+         * ======================= */
+        const styleEl = document.createElement("style");
+        document.head.appendChild(styleEl);
 
-function clearHighlights() {
-    styles = [];
-    updateHighlights();
-}
-
-function highlightSquare(square, color) {
-    return `
-        chess-board::part(${square}) {
-            box-shadow: inset 0 0 0 4px ${color};
+        function highlight(from, to, color) {
+            styleEl.textContent = `
+                chess-board::part(${from}),
+                chess-board::part(${to}) {
+                    box-shadow: inset 0 0 0 4px ${color};
+                }
+            `;
         }
-    `;
-}
 
-function highlightMove(move, color) {
-    clearHighlights();
-    styles.push(highlightSquare(move.from, color));
-    styles.push(highlightSquare(move.to, color));
-    updateHighlights();
-}
+        /* =======================
+         * Utilidades UI
+         * ======================= */
+        function updateTurn() {
+            turnEl.textContent =
+                game.turn() === "w"
+                    ? "Juegan blancas"
+                    : "Juegan negras";
+        }
 
-function updateTurnIndicator(game) {
-    document.getElementById("turn-indicator").innerText =
-        game.turn() === "w"
-            ? "Juegan blancas"
-            : "Juegan negras";
-}
+        function showResult(eloChanges) {
+            resultBox.style.display = "block";
+            nextBtn.style.display = "inline-block";
 
-function showNextButton() {
-    document.getElementById("next-puzzle-btn").style.display = "inline-block";
-}
+            let html = "<strong>Resultado del puzzle</strong><br><br>";
+            eloChanges.forEach(c => {
+                const delta = c.new - c.old;
+                html += `
+                    <div>
+                        ${c.name}: ${c.old} → <strong>${c.new}</strong>
+                        <span style="color:${delta >= 0 ? "green" : "red"}">
+                            (${delta >= 0 ? "+" : ""}${delta})
+                        </span>
+                    </div>
+                `;
+            });
 
-function goNextPuzzle() {
-    window.location.reload();
-}
+            eloBox.innerHTML = html;
+        }
 
-function renderEloResult(changes) {
-    document.getElementById("result").style.display = "block";
-    const container = document.getElementById("elo-result");
-    if (!changes || !changes.length) return;
+        /* =======================
+         * Submit
+         * ======================= */
+        function submit(solved) {
+            if (submitted) return;
+            submitted = true;
 
-    let html = "<strong>Resultado del puzzle</strong><br><br>";
+            fetch(SUBMIT_URL, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": CSRF_TOKEN
+                },
+                body: JSON.stringify({
+                    puzzle_id: PUZZLE_ID,
+                    solved: solved
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status !== "ok") return;
+                showResult(data.elo_changes);
+            });
+        }
 
-    changes.forEach(c => {
-        const delta = c.new - c.old;
-        const sign = delta >= 0 ? "+" : "";
-        const color = delta >= 0 ? "green" : "red";
-
-        html += `
-            <div>
-                ${c.name}:
-                ${c.old} → <strong>${c.new}</strong>
-                <span style="color:${color}">
-                    (${sign}${delta})
-                </span>
-            </div>
-        `;
-    });
-
-    container.innerHTML = html;
-}
-
-
-function submitResult(solved) {
-    if (alreadySubmitted) return;
-    alreadySubmitted = true;
-
-    fetch(SUBMIT_URL, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": CSRF_TOKEN
-        },
-        body: JSON.stringify({
-            puzzle_id: PUZZLE_ID,
-            solved: solved
-        })
-    })
-    .then(res => res.json())
-    .then(data => {
-        if (data.status !== "ok") return;
-
-        renderEloResult(data.elo_changes);
-        showNextButton();
-    });
-}
-
-function puzzleInit(fen) {
-    const game = new Chess(fen);
-    const solutionMoves = {{ puzzle.moves|safe }};
-    let moveIndex = 0;
-    let puzzleFailed = false;
-
-    document.getElementById("status").innerText = "Resuelve el puzzle";
-    updateTurnIndicator(game);
-
-    // Jugada inicial del rival
-    if (solutionMoves[moveIndex]) {
-        setTimeout(() => {
-            const m = solutionMoves[moveIndex];
+        /* =======================
+         * Ejecutar jugada (motor)
+         * ======================= */
+        function playMove(moveStr, color) {
             const move = game.move({
-                from: m.slice(0, 2),
-                to: m.slice(2, 4),
-                promotion: m.length === 5 ? m[4] : undefined
+                from: moveStr.slice(0, 2),
+                to: moveStr.slice(2, 4),
+                promotion: moveStr[4]
             });
 
             board.setPosition(game.fen());
-            highlightMove(move, "#2196f3");
-            updateTurnIndicator(game);
+            highlight(move.from, move.to, color);
+            updateTurn();
             moveIndex++;
-        }, 800);
-    }
-
-    board.addEventListener("drag-start", (e) => {
-        const { piece } = e.detail;
-
-        if (puzzleFailed || game.game_over()) e.preventDefault();
-
-        if (
-            (game.turn() === "w" && piece.startsWith("b")) ||
-            (game.turn() === "b" && piece.startsWith("w"))
-        ) {
-            e.preventDefault();
-        }
-    });
-
-    board.addEventListener("drop", (e) => {
-        const { source, target, setAction } = e.detail;
-
-        if (puzzleFailed) {
-            setAction("snapback");
-            return;
         }
 
-        const expected = solutionMoves[moveIndex];
-        const attempted = source + target;
+        /* =======================
+         * Inicialización
+         * ======================= */
+        function init() {
 
-        const move = game.move({
-            from: source,
-            to: target,
-            promotion: getPromotionPiece()
-        });
+            game = new Chess(FEN);
 
-        if (!move) {
-            setAction("snapback");
-            return;
-        }
+            statusEl.textContent = "Resuelve el puzzle";
+            updateTurn();
 
-        if (attempted !== expected) {
-            puzzleFailed = true;
-            game.undo();
-            setAction("snapback");
-            document.getElementById("status").innerText = "❌ Movimiento incorrecto";
-            submitResult(false);
-            return;
-        }
-
-        board.setPosition(game.fen());
-        highlightMove(move, "#ffc107");
-        updateTurnIndicator(game);
-        moveIndex++;
-
-        if (!solutionMoves[moveIndex]) {
-            document.getElementById("status").innerText = "✅ Puzzle resuelto";
-            submitResult(true);
-            return;
-        }
-
-        // Juega el rival
-        setTimeout(() => {
-            const m = solutionMoves[moveIndex];
-            const reply = game.move({
-                from: m.slice(0, 2),
-                to: m.slice(2, 4),
-                promotion: m.length === 5 ? m[4] : undefined
+            // Botón siguiente puzzle
+            nextBtn.addEventListener("click", () => {
+                window.location.reload();
             });
 
-            board.setPosition(game.fen());
-            highlightMove(reply, "#2196f3");
-            updateTurnIndicator(game);
-            moveIndex++;
-        }, 800);
-    });
+            // Primera jugada del rival
+            setTimeout(() => {
+                playMove(SOLUTION[moveIndex], "#2196f3");
+            }, 600);
 
-    board.addEventListener("snap-end", () => {
-        board.setPosition(game.fen());
-    });
-}
+            /* ========= Drag start ========= */
+            board.addEventListener("drag-start", e => {
+                if (failed || game.game_over()) {
+                    e.preventDefault();
+                    return;
+                }
 
-document.addEventListener("DOMContentLoaded", function () {
-    puzzleInit("{{ puzzle.fen|escapejs }}");
+                const { piece } = e.detail;
+                if (
+                    (game.turn() === "w" && piece.startsWith("b")) ||
+                    (game.turn() === "b" && piece.startsWith("w"))
+                ) {
+                    e.preventDefault();
+                }
+            });
+
+            /* ========= Drop ========= */
+            board.addEventListener("drop", e => {
+                const { source, target, setAction } = e.detail;
+
+                if (failed) {
+                    setAction("snapback");
+                    return;
+                }
+
+                const expected = SOLUTION[moveIndex];
+                const promotion = promotionSelect.value || "q";
+
+                // Intentar jugada en el motor (valida legalidad)
+                const move = game.move({
+                    from: source,
+                    to: target,
+                    promotion: promotion
+                });
+
+                // Jugada ilegal
+                if (!move) {
+                    setAction("snapback");
+                    return;
+                }
+
+                // Normalizar jugada ejecutada
+                const played =
+                    move.from +
+                    move.to +
+                    (move.promotion ? move.promotion : "");
+
+                // Comparar con solución
+                if (played !== expected) {
+                    failed = true;
+                    game.undo();
+                    setAction("snapback");
+                    statusEl.textContent = "❌ Movimiento incorrecto";
+                    submit(false);
+                    return;
+                }
+
+                // Jugada correcta
+                board.setPosition(game.fen());
+                highlight(move.from, move.to, "#ffc107");
+                updateTurn();
+                moveIndex++;
+
+                // Puzzle resuelto
+                if (!SOLUTION[moveIndex]) {
+                    statusEl.textContent = "✅ Puzzle resuelto";
+                    submit(true);
+                    return;
+                }
+
+                // Juega el rival
+                setTimeout(() => {
+                    playMove(SOLUTION[moveIndex], "#2196f3");
+                }, 600);
+            });
+        }
+
+        return { init };
+    })();
+
+    PuzzleApp.init();
 });
 </script>
+
 
 {% endblock %}
