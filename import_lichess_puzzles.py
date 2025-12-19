@@ -1,5 +1,6 @@
 import csv
 import sqlite3
+import random
 from pathlib import Path
 
 # ----- CONFIG -----
@@ -15,7 +16,8 @@ def create_tables(cursor):
             puzzle_id TEXT PRIMARY KEY,
             fen TEXT NOT NULL,
             moves TEXT NOT NULL,
-            rating INTEGER
+            rating INTEGER NOT NULL,
+            rnd INTEGER NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS themes (
@@ -24,24 +26,30 @@ def create_tables(cursor):
         );
 
         CREATE TABLE IF NOT EXISTS puzzle_themes (
-            puzzle_id TEXT,
-            theme_id INTEGER,
+            puzzle_id TEXT NOT NULL,
+            theme_id INTEGER NOT NULL,
             PRIMARY KEY (puzzle_id, theme_id),
             FOREIGN KEY (puzzle_id) REFERENCES puzzles(puzzle_id),
             FOREIGN KEY (theme_id) REFERENCES themes(id)
         );
+
+        -- Índices críticos
+        CREATE INDEX IF NOT EXISTS idx_puzzles_rating ON puzzles(rating);
+        CREATE INDEX IF NOT EXISTS idx_puzzles_rnd ON puzzles(rnd);
+        CREATE INDEX IF NOT EXISTS idx_themes_name ON themes(name);
+        CREATE INDEX IF NOT EXISTS idx_puzzle_themes_puzzle ON puzzle_themes(puzzle_id);
+        CREATE INDEX IF NOT EXISTS idx_puzzle_themes_theme ON puzzle_themes(theme_id);
     """)
 
 
-def get_or_create(cursor, table, name):
-    cursor.execute(f"SELECT id FROM {table} WHERE name = ?", (name,))
+def get_or_create_theme(cursor, name):
+    cursor.execute("SELECT id FROM themes WHERE name = ?", (name,))
     row = cursor.fetchone()
-
     if row:
         return row[0]
 
     cursor.execute(
-        f"INSERT INTO {table} (name) VALUES (?)",
+        "INSERT INTO themes (name) VALUES (?)",
         (name,)
     )
     return cursor.lastrowid
@@ -56,7 +64,7 @@ def convert_csv_to_sqlite():
     conn = sqlite3.connect(SQLITE_FILE)
     cursor = conn.cursor()
 
-    print("Creando tablas...")
+    print("Creando tablas e índices...")
     create_tables(cursor)
     conn.commit()
 
@@ -64,16 +72,18 @@ def convert_csv_to_sqlite():
     total = 0
     skipped = 0
 
-    with open(CSV_FILE, "r", encoding="utf-8") as f:
+    with open(csv_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
 
         for row in reader:
-            # ---- Filtrar puzzles inestables ----
+            # -----------------------------
+            # Filtro de estabilidad
+            # -----------------------------
             try:
                 if int(row["RatingDeviation"]) >= rating_deviation_threshold:
                     skipped += 1
                     continue
-            except ValueError:
+            except Exception:
                 skipped += 1
                 continue
 
@@ -82,25 +92,31 @@ def convert_csv_to_sqlite():
             moves = row["Moves"]
             rating = int(row["Rating"])
 
-            # ---- Insertar puzzle ----
-            cursor.execute("""
-                INSERT OR REPLACE INTO puzzles (puzzle_id, fen, moves, rating)
-                VALUES (?, ?, ?, ?)
-            """, (puzzle_id, fen, moves, rating))
+            # rnd precomputado (clave del random rápido)
+            rnd = random.randint(0, 2**31 - 1)
 
-            # ---- Procesar THEMES ----
+            # -----------------------------
+            # Insertar puzzle
+            # -----------------------------
+            cursor.execute("""
+                INSERT OR REPLACE INTO puzzles
+                (puzzle_id, fen, moves, rating, rnd)
+                VALUES (?, ?, ?, ?, ?)
+            """, (puzzle_id, fen, moves, rating, rnd))
+
+            # -----------------------------
+            # Procesar themes
+            # -----------------------------
             themes = set()
 
-            # Themes tácticos / estratégicos
             for theme in row["Themes"].split():
                 themes.add(theme)
 
-            # Aperturas como themes
             for opening in row["OpeningTags"].split():
                 themes.add(opening)
 
             for theme in themes:
-                theme_id = get_or_create(cursor, "themes", theme)
+                theme_id = get_or_create_theme(cursor, theme)
                 cursor.execute("""
                     INSERT OR IGNORE INTO puzzle_themes (puzzle_id, theme_id)
                     VALUES (?, ?)

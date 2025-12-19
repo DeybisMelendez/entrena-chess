@@ -1,13 +1,17 @@
 import sqlite3
+import random
 from pathlib import Path
 from django.conf import settings
-import random
 
 
 class LichessDB:
     """
     Acceso a la base de datos de puzzles de Lichess (SQLite).
-    Todos los tags (tácticas, fases, aperturas) se manejan como THEMES.
+
+    - Random rápido con rnd precomputado
+    - Filtro por rating y theme(s)
+    - Devuelve los themes del puzzle seleccionado
+    - Lookup directo por puzzle_id
     """
 
     def __init__(self):
@@ -17,28 +21,35 @@ class LichessDB:
         return sqlite3.connect(self.db_path)
 
     def get_board_orientation(self, fen):
-        """Determina la orientación del tablero según el FEN."""
         try:
             return "white" if fen.split()[1] == "b" else "black"
         except Exception:
             return "white"
 
+    # =====================================================
+    # Random óptimo por rating + theme(s)
+    # =====================================================
     def get_random_puzzle(self, rating_min=0, rating_max=3000, themes=None):
         """
-        Obtiene un puzzle aleatorio filtrado por rating y themes.
+        themes: lista de nombres de themes (al menos uno)
         """
         themes = themes or []
 
         conn = self.connect()
         cursor = conn.cursor()
 
-        # ----------------------------
-        # 1. Construir WHERE y JOIN
-        # ----------------------------
-        where = ["p.rating BETWEEN ? AND ?"]
-        params = [rating_min, rating_max]
+        rnd = random.randint(0, 2**31 - 1)
 
+        # ----------------------------
+        # Construir JOIN y WHERE
+        # ----------------------------
         join = ""
+        where = [
+            "p.rating BETWEEN ? AND ?",
+            "p.rnd >= ?",
+        ]
+        params = [rating_min, rating_max, rnd]
+
         if themes:
             join = """
                 JOIN puzzle_themes pt ON pt.puzzle_id = p.puzzle_id
@@ -52,34 +63,42 @@ class LichessDB:
         where_sql = " AND ".join(where)
 
         # ----------------------------
-        # 2. Contar candidatos
+        # Query principal
         # ----------------------------
         cursor.execute(f"""
-            SELECT COUNT(DISTINCT p.puzzle_id)
+            SELECT DISTINCT
+                p.puzzle_id,
+                p.fen,
+                p.moves,
+                p.rating
             FROM puzzles p
             {join}
             WHERE {where_sql}
+            ORDER BY p.rnd
+            LIMIT 1
         """, params)
 
-        total = cursor.fetchone()[0]
-        if total == 0:
-            conn.close()
-            return None
-
-        offset = random.randint(0, total - 1)
-
-        # ----------------------------
-        # 3. Obtener puzzle por OFFSET
-        # ----------------------------
-        cursor.execute(f"""
-            SELECT DISTINCT p.puzzle_id, p.fen, p.moves, p.rating
-            FROM puzzles p
-            {join}
-            WHERE {where_sql}
-            LIMIT 1 OFFSET ?
-        """, params + [offset])
-
         row = cursor.fetchone()
+
+        # ----------------------------
+        # Wrap-around
+        # ----------------------------
+        if not row:
+            cursor.execute(f"""
+                SELECT DISTINCT
+                    p.puzzle_id,
+                    p.fen,
+                    p.moves,
+                    p.rating
+                FROM puzzles p
+                {join}
+                WHERE p.rating BETWEEN ? AND ?
+                ORDER BY p.rnd
+                LIMIT 1
+            """, [rating_min, rating_max] + themes)
+
+            row = cursor.fetchone()
+
         if not row:
             conn.close()
             return None
@@ -87,7 +106,7 @@ class LichessDB:
         puzzle_id, fen, moves, rating = row
 
         # ----------------------------
-        # 4. Obtener themes del puzzle
+        # Obtener TODOS los themes del puzzle
         # ----------------------------
         cursor.execute("""
             SELECT t.name
@@ -108,6 +127,9 @@ class LichessDB:
             "themes": theme_list,
         }
 
+    # =====================================================
+    # Lookup directo por ID
+    # =====================================================
     def get_puzzle_by_id(self, puzzle_id):
         conn = self.connect()
         cursor = conn.cursor()
@@ -123,6 +145,8 @@ class LichessDB:
             conn.close()
             return None
 
+        puzzle_id, fen, moves, rating = row
+
         cursor.execute("""
             SELECT t.name
             FROM themes t
@@ -134,33 +158,10 @@ class LichessDB:
         conn.close()
 
         return {
-            "puzzle_id": row[0],
-            "fen": row[1],
-            "moves": row[2].split(),
-            "rating": row[3],
-            "orientation": self.get_board_orientation(row[1]),
+            "puzzle_id": puzzle_id,
+            "fen": fen,
+            "moves": moves.split(),
+            "rating": rating,
+            "orientation": self.get_board_orientation(fen),
             "themes": theme_list,
         }
-
-    def get_puzzle_themes(self, puzzle_id):
-        conn = self.connect()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT t.name
-            FROM themes t
-            JOIN puzzle_themes pt ON pt.theme_id = t.id
-            WHERE pt.puzzle_id = ?
-        """, (puzzle_id,))
-
-        themes = [row[0] for row in cursor.fetchall()]
-        conn.close()
-        return themes
-
-    def get_all_themes(self):
-        conn = self.connect()
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM themes ORDER BY name ASC")
-        data = [x[0] for x in cursor.fetchall()]
-        conn.close()
-        return data
