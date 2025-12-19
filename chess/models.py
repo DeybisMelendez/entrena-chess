@@ -164,7 +164,8 @@ class ThemeElo(BaseElo):
     last_trained = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="Última vez que este tema fue entrenado por el usuario"
+        help_text="Última vez que este tema fue entrenado por el usuario",
+        auto_now=True
     )
 
     class Meta:

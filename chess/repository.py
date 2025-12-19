@@ -1,6 +1,7 @@
 import sqlite3
 from pathlib import Path
 from django.conf import settings
+import random
 
 
 class LichessDB:
@@ -25,44 +26,69 @@ class LichessDB:
     def get_random_puzzle(self, rating_min=0, rating_max=3000, themes=None):
         """
         Obtiene un puzzle aleatorio filtrado por rating y themes.
-
-        themes: lista de strings (tags de lichess, tácticas o aperturas)
         """
         themes = themes or []
 
         conn = self.connect()
         cursor = conn.cursor()
 
-        query = """
-            SELECT DISTINCT p.puzzle_id, p.fen, p.moves, p.rating
-            FROM puzzles p
-        """
+        # ----------------------------
+        # 1. Construir WHERE y JOIN
+        # ----------------------------
+        where = ["p.rating BETWEEN ? AND ?"]
+        params = [rating_min, rating_max]
 
+        join = ""
         if themes:
-            query += """
+            join = """
                 JOIN puzzle_themes pt ON pt.puzzle_id = p.puzzle_id
                 JOIN themes t ON t.id = pt.theme_id
             """
-
-        query += " WHERE p.rating BETWEEN ? AND ? "
-        params = [rating_min, rating_max]
-
-        if themes:
-            query += " AND t.name IN (" + ",".join("?" * len(themes)) + ")"
+            where.append(
+                "t.name IN ({})".format(",".join("?" * len(themes)))
+            )
             params.extend(themes)
 
-        query += " ORDER BY RANDOM() LIMIT 1"
+        where_sql = " AND ".join(where)
 
-        cursor.execute(query, params)
+        # ----------------------------
+        # 2. Contar candidatos
+        # ----------------------------
+        cursor.execute(f"""
+            SELECT COUNT(DISTINCT p.puzzle_id)
+            FROM puzzles p
+            {join}
+            WHERE {where_sql}
+        """, params)
+
+        total = cursor.fetchone()[0]
+        if total == 0:
+            conn.close()
+            return None
+
+        offset = random.randint(0, total - 1)
+
+        # ----------------------------
+        # 3. Obtener puzzle por OFFSET
+        # ----------------------------
+        cursor.execute(f"""
+            SELECT DISTINCT p.puzzle_id, p.fen, p.moves, p.rating
+            FROM puzzles p
+            {join}
+            WHERE {where_sql}
+            LIMIT 1 OFFSET ?
+        """, params + [offset])
+
         row = cursor.fetchone()
-
         if not row:
             conn.close()
             return None
 
-        puzzle_id = row[0]
+        puzzle_id, fen, moves, rating = row
 
-        # Obtener themes del puzzle
+        # ----------------------------
+        # 4. Obtener themes del puzzle
+        # ----------------------------
         cursor.execute("""
             SELECT t.name
             FROM themes t
@@ -70,16 +96,15 @@ class LichessDB:
             WHERE pt.puzzle_id = ?
         """, (puzzle_id,))
 
-        theme_list = [x[0] for x in cursor.fetchall()]
-
+        theme_list = [r[0] for r in cursor.fetchall()]
         conn.close()
 
         return {
-            "puzzle_id": row[0],
-            "fen": row[1],
-            "moves": row[2].split(),
-            "rating": row[3],
-            "orientation": self.get_board_orientation(row[1]),
+            "puzzle_id": puzzle_id,
+            "fen": fen,
+            "moves": moves.split(),
+            "rating": rating,
+            "orientation": self.get_board_orientation(fen),
             "themes": theme_list,
         }
 
@@ -91,11 +116,9 @@ class LichessDB:
             SELECT puzzle_id, fen, moves, rating
             FROM puzzles
             WHERE puzzle_id = ?
-            LIMIT 1
         """, (puzzle_id,))
 
         row = cursor.fetchone()
-
         if not row:
             conn.close()
             return None
@@ -107,8 +130,7 @@ class LichessDB:
             WHERE pt.puzzle_id = ?
         """, (puzzle_id,))
 
-        theme_list = [x[0] for x in cursor.fetchall()]
-
+        theme_list = [r[0] for r in cursor.fetchall()]
         conn.close()
 
         return {
