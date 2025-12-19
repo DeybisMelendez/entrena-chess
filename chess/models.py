@@ -161,6 +161,11 @@ class ThemeElo(BaseElo):
         related_name="theme_elos"
     )
     theme = models.ForeignKey(Theme, on_delete=models.CASCADE)
+    last_trained = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Última vez que este tema fue entrenado por el usuario"
+    )
 
     class Meta:
         constraints = [

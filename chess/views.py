@@ -11,6 +11,7 @@ from django.utils.timezone import make_aware
 from datetime import datetime
 from django.db.models import Count, Q
 from django.db.models import Prefetch
+from django.db import transaction
 from .models import (
     TrainingPreferences,
     TrainingCycle,
@@ -32,21 +33,15 @@ def get_puzzle(request):
     today = date.today()
     db = LichessDB()
 
-    preferences = TrainingPreferences.objects.get(user=user)
     start_date, end_date = get_week_cycle_dates(today)
 
     cycle, _ = TrainingCycle.objects.get_or_create(
         user=user,
         start_date=start_date,
         end_date=end_date,
-        defaults={
-            "total_puzzles": preferences.puzzles_per_cycle,
-        }
     )
 
     cycle_themes = cycle.themes.select_related("theme")
-    if not cycle_themes.exists():
-        raise Http404("El ciclo no tiene temas asignados.")
 
     active = ActiveExercise.objects.filter(user=user).first()
     if active:
@@ -54,6 +49,7 @@ def get_puzzle(request):
         if not puzzle:
             active.delete()
             raise Http404("Puzzle activo inválido.")
+
         return render(
             request,
             "puzzle.html",
@@ -64,18 +60,23 @@ def get_puzzle(request):
             }
         )
 
-    retry_qs = RetryPuzzle.objects.filter(
-        user=user
-    ).order_by("-fail_count", "last_attempt_at")
+    retry = (
+        RetryPuzzle.objects
+        .filter(user=user)
+        .order_by("-fail_count", "last_attempt_at")
+        .first()
+    )
 
-    if retry_qs.exists() and random.random() < 0.1:
-        retry = retry_qs.first()
+    if retry and random.random() < 0.1:
         puzzle = db.get_puzzle_by_id(retry.puzzle_id)
     else:
         cycle_theme = pick_cycle_theme(cycle_themes)
         theme = cycle_theme.theme
 
-        theme_elo = ThemeElo.objects.get(user=user, theme=theme)
+        theme_elo = ThemeElo.objects.get(
+            user=user,
+            theme=theme
+        )
 
         rating_min = max(0, theme_elo.elo - 50)
         rating_max = theme_elo.elo + 50
@@ -107,15 +108,21 @@ def get_puzzle(request):
 
 @login_required
 @require_POST
+@transaction.atomic
 def submit_puzzle(request):
     user = request.user
-    today = date.today()
     data = json.loads(request.body)
 
     puzzle_id = data.get("puzzle_id")
     solved = bool(data.get("solved"))
 
-    active = ActiveExercise.objects.filter(user=user).first()
+    active = (
+        ActiveExercise.objects
+        .select_for_update()
+        .filter(user=user)
+        .first()
+    )
+
     if not active or active.puzzle_id != puzzle_id:
         return JsonResponse(
             {"status": "error", "message": "Puzzle activo inválido"},
@@ -136,22 +143,28 @@ def submit_puzzle(request):
             puzzle_id=puzzle_id,
         ).delete()
     else:
-        retry, _ = RetryPuzzle.objects.get_or_create(
+        RetryPuzzle.objects.update_or_create(
             user=user,
             puzzle_id=puzzle_id,
+            defaults={"fail_count": 1},
         )
-        retry.fail_count += 1
-        retry.save(update_fields=["fail_count", "last_attempt_at"])
 
-    cycle = TrainingCycle.objects.filter(
-        user=user,
-        start_date__lte=today,
-        end_date__gte=today,
-    ).first()
+    if solved:
+        today = date.today()
+        cycle = (
+            TrainingCycle.objects
+            .filter(
+                user=user,
+                start_date__lte=today,
+                end_date__gte=today,
+            )
+            .select_for_update()
+            .first()
+        )
 
-    if solved and cycle:
-        cycle.completed_puzzles += 1
-        cycle.save(update_fields=["completed_puzzles"])
+        if cycle:
+            cycle.completed_puzzles += 1
+            cycle.save(update_fields=["completed_puzzles"])
 
     db = LichessDB()
     puzzle_data = db.get_puzzle_by_id(puzzle_id)
@@ -162,7 +175,7 @@ def submit_puzzle(request):
 
     elo_changes = []
 
-    user_elo = Elo.objects.get(user=user)
+    user_elo = Elo.objects.select_for_update().get(user=user)
     old_general = user_elo.elo
 
     user_elo.update_elo(
@@ -176,21 +189,22 @@ def submit_puzzle(request):
         "new": user_elo.elo,
     })
 
-    themes = set()
+    themes = Theme.objects.filter(
+        lichess_name__in=puzzle_themes
+    )
 
-    for theme_name in puzzle_themes:
-        try:
-            theme = Theme.objects.get(lichess_name=theme_name)
-        except Theme.DoesNotExist:
-            continue
-
-        themes.add(theme)
+    theme_elos = {
+        te.theme_id: te
+        for te in ThemeElo.objects.filter(
+            user=user,
+            theme__in=themes
+        ).select_for_update()
+    }
 
     for theme in themes:
-        theme_elo, _ = ThemeElo.objects.get_or_create(
-            user=user,
-            theme=theme,
-        )
+        theme_elo = theme_elos.get(theme.id)
+        if not theme_elo:
+            continue  # por seguridad extrema
 
         old_elo = theme_elo.elo
 
@@ -219,37 +233,53 @@ def home(request):
     user = request.user
     today = date.today()
 
-    preferences = TrainingPreferences.objects.get(user=user)
     start_date, end_date = get_week_cycle_dates(today)
 
+    # El ciclo se autocrea y configura vía signals
     cycle, _ = TrainingCycle.objects.get_or_create(
         user=user,
         start_date=start_date,
         end_date=end_date,
-        defaults={
-            "total_puzzles": preferences.puzzles_per_cycle,
-        }
     )
 
+    # Elo general
     user_elo = Elo.objects.get(user=user)
 
-    cycle_themes = TrainingCycleTheme.objects.filter(cycle=cycle)
-    opening_elo = ThemeElo.objects.get(
-        user=user, theme__lichess_name="opening")
-    middlegame_elo = ThemeElo.objects.get(
-        user=user, theme__lichess_name="middlegame")
-    endgame_elo = ThemeElo.objects.get(
-        user=user, theme__lichess_name="endgame")
-    mate_elo = ThemeElo.objects.get(
-        user=user, theme__lichess_name="mate")
+    # Temas del ciclo (una sola query optimizada)
+    cycle_themes = (
+        TrainingCycleTheme.objects
+        .filter(cycle=cycle)
+        .select_related("theme")
+        .order_by("priority")
+    )
+
+    # Elos por categoría principal (una sola query)
+    category_elos = (
+        ThemeElo.objects
+        .filter(
+            user=user,
+            theme__lichess_name__in=[
+                "opening",
+                "middlegame",
+                "endgame",
+                "mate",
+            ]
+        )
+        .select_related("theme")
+    )
+
+    elo_map = {
+        te.theme.lichess_name: te
+        for te in category_elos
+    }
 
     context = {
         "cycle": cycle,
         "elo": user_elo,
-        "opening": opening_elo,
-        "middlegame": middlegame_elo,
-        "endgame": endgame_elo,
-        "mate": mate_elo,
+        "opening": elo_map.get("opening"),
+        "middlegame": elo_map.get("middlegame"),
+        "endgame": elo_map.get("endgame"),
+        "mate": elo_map.get("mate"),
         "cycle_themes": cycle_themes,
     }
 
@@ -312,13 +342,11 @@ def theme_overview(request):
         Theme.objects
         .filter(parent__isnull=True)
         .prefetch_related(
-            # Elo de la categoría
             Prefetch(
                 "themeelo_set",
                 queryset=user_theme_elos,
                 to_attr="category_elo"
             ),
-            # Subtemas entrenables + su Elo
             Prefetch(
                 "subthemes",
                 queryset=Theme.objects.filter(is_trainable=True)

@@ -258,7 +258,9 @@ function puzzleInit(fen) {
     });
 }
 
-puzzleInit("{{ puzzle.fen }}");
+document.addEventListener("DOMContentLoaded", function () {
+    puzzleInit("{{ puzzle.fen|escapejs }}");
+});
 </script>
 
 {% endblock %}
