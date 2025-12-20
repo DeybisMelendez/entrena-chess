@@ -39,6 +39,9 @@ def get_puzzle(request):
         user=user,
         start_date=start_date,
         end_date=end_date,
+        defaults={
+            "total_puzzles": user.trainingpreferences.puzzles_per_cycle
+        }
     )
 
     cycle_themes = cycle.themes.select_related("theme")

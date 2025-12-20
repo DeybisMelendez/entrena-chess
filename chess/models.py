@@ -82,7 +82,7 @@ class TrainingCycle(models.Model):
     start_date = models.DateField(default=timezone.now)
     end_date = models.DateField()
 
-    total_puzzles = models.PositiveIntegerField()
+    total_puzzles = models.PositiveIntegerField(default=100)
     completed_puzzles = models.PositiveIntegerField(default=0)
 
     created_at = models.DateTimeField(auto_now_add=True)
