@@ -43,23 +43,30 @@ def get_puzzle(request):
 
     cycle_themes = cycle.themes.select_related("theme")
 
+    # --------------------------------------------------
+    # 1. Puzzle activo
+    # --------------------------------------------------
     active = ActiveExercise.objects.filter(user=user).first()
     if active:
         puzzle = db.get_puzzle_by_id(active.puzzle_id)
-        if not puzzle:
-            active.delete()
-            raise Http404("Puzzle activo inválido.")
+        if puzzle:
+            return render(
+                request,
+                "puzzle.html",
+                {
+                    "puzzle": puzzle,
+                    "cycle": cycle,
+                    "themes": cycle_themes,
+                }
+            )
+        # Puzzle inválido → limpiar y continuar
+        active.delete()
 
-        return render(
-            request,
-            "puzzle.html",
-            {
-                "puzzle": puzzle,
-                "cycle": cycle,
-                "themes": cycle_themes,
-            }
-        )
+    puzzle = None
 
+    # --------------------------------------------------
+    # 2. Retry puzzle (best effort)
+    # --------------------------------------------------
     retry = (
         RetryPuzzle.objects
         .filter(user=user)
@@ -69,26 +76,24 @@ def get_puzzle(request):
 
     if retry and random.random() < 0.1:
         puzzle = db.get_puzzle_by_id(retry.puzzle_id)
-    else:
+
+    # --------------------------------------------------
+    # 3. Puzzle por tema + elo
+    # --------------------------------------------------
+    if not puzzle:
         cycle_theme = pick_cycle_theme(cycle_themes)
         theme = cycle_theme.theme
 
-        theme_elo = ThemeElo.objects.get(
-            user=user,
-            theme=theme
-        )
+        theme_elo = ThemeElo.objects.get(user=user, theme=theme)
 
-        rating_min = max(0, theme_elo.elo - 50)
-        rating_max = theme_elo.elo + 50
-
-        puzzle = db.get_random_puzzle(
-            rating_min=rating_min,
-            rating_max=rating_max,
-            themes=[theme.lichess_name],
-        )
-
-    if not puzzle:
-        raise Http404("No se pudo obtener un puzzle.")
+        for delta in (50, 150, 300):
+            puzzle = db.get_random_puzzle(
+                rating_min=max(0, theme_elo.elo - delta),
+                rating_max=theme_elo.elo + delta,
+                themes=[theme.lichess_name],
+            )
+            if puzzle:
+                break
 
     ActiveExercise.objects.create(
         user=user,
