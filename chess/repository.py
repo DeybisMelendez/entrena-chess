@@ -11,7 +11,6 @@ class LichessDB:
     - Conexión persistente (optimizada para PythonAnywhere)
     - Random rápido con rnd precomputado
     - Filtro por rating + theme(s)
-    - Devuelve los themes del puzzle
     - Lookup directo por puzzle_id
     """
 
@@ -32,12 +31,6 @@ class LichessDB:
             )
 
             cursor = conn.cursor()
-
-            # PRAGMAs críticos para lectura rápida
-            cursor.execute("PRAGMA journal_mode=OFF;")
-            cursor.execute("PRAGMA synchronous=OFF;")
-            cursor.execute("PRAGMA temp_store=MEMORY;")
-            cursor.execute("PRAGMA cache_size=-20000;")  # ~20MB cache
 
             self.__class__._conn = conn
 

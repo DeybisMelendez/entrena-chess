@@ -6,7 +6,8 @@ from pathlib import Path
 # ----- CONFIG -----
 CSV_FILE = "lichess_db_puzzle.csv"
 SQLITE_FILE = "lichess_puzzles.sqlite3"
-rating_deviation_threshold = 77
+rating_deviation_threshold = 75
+min_rating = 0
 BATCH_SIZE = 5000
 
 
@@ -32,13 +33,6 @@ def create_tables(cursor):
             FOREIGN KEY (puzzle_id) REFERENCES puzzles(puzzle_id),
             FOREIGN KEY (theme_id) REFERENCES themes(id)
         );
-
-        -- Índices críticos
-        CREATE INDEX IF NOT EXISTS idx_puzzles_rating ON puzzles(rating);
-        CREATE INDEX IF NOT EXISTS idx_puzzles_rnd ON puzzles(rnd);
-        CREATE INDEX IF NOT EXISTS idx_themes_name ON themes(name);
-        CREATE INDEX IF NOT EXISTS idx_puzzle_themes_puzzle ON puzzle_themes(puzzle_id);
-        CREATE INDEX IF NOT EXISTS idx_puzzle_themes_theme ON puzzle_themes(theme_id);
     """)
 
 
@@ -80,7 +74,7 @@ def convert_csv_to_sqlite():
             # Filtro de estabilidad
             # -----------------------------
             try:
-                if int(row["RatingDeviation"]) >= rating_deviation_threshold:
+                if int(row["RatingDeviation"]) >= rating_deviation_threshold or int(row["Rating"]) < min_rating:
                     skipped += 1
                     continue
             except Exception:
