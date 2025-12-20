@@ -3,10 +3,10 @@
 
 {% block content %}
 
-<h1>Temas</h1>
+<h1>Elo general: {{request.user.elo.elo}}</h1>
 <h2>Temas entrenables</h2>
 {% for category in trainable_categories %}
-<details {% if forloop.first %}open{% endif %}>
+<details {% if forloop.first %}open{% endif %} x-data='{eloCategory: {{request.user.elo.elo}}}'>
     <summary>
         <strong>{{ category.name }}</strong>
 
@@ -46,27 +46,7 @@
                             <small class="muted">{{ theme.description }}</small>
                         {% endif %}
                     </td>
-                    <td>
-                        {% if theme.theme_elo %}
-                            {% with elo=theme.theme_elo.0.elo %}
-                                {% if elo < 1400 %}
-                                    <span style="color:#d32f2f;font-weight:600;">
-                                        {{ elo }}
-                                    </span>
-                                {% elif elo < 1700 %}
-                                    <span style="color:#f9a825;font-weight:600;">
-                                        {{ elo }}
-                                    </span>
-                                {% else %}
-                                    <span style="color:#2e7d32;font-weight:600;">
-                                        {{ elo }}
-                                    </span>
-                                {% endif %}
-                            {% endwith %}
-                        {% else %}
-                            —
-                        {% endif %}
-                    </td>
+                    <td x-data='{elo: {{theme.theme_elo.0.elo}}}' x-text="elo" :class="elo < eloCategory-100 ? 'red' : elo > eloCategory+100 ? 'green' : 'blue'"></td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -80,7 +60,11 @@
 
 <h2>Temas no entrenables</h2>
 {% for category in non_trainable_categories %}
-<details {% if forloop.first %}open{% endif %}>
+<details {% if forloop.first %}open{% endif %}
+    {% if category.category_elo and category.lichess_name == 'opening' %}
+    x-data='{eloCategory: {{request.user.elo.elo}}}'
+    {% endif %}
+    >
     <summary>
         <strong>{{ category.name }}</strong>
 
@@ -89,6 +73,7 @@
         </small>
 
         <span class="muted" style="margin-left:1rem;">
+            <td x-data='{elo: {{theme.theme_elo.0.elo}}}' x-text="elo"></td>
             Elo:
             {% if category.category_elo and category.lichess_name == 'opening' %}
                 {{ category.category_elo.0.elo }}
@@ -120,27 +105,12 @@
                             <small class="muted">{{ theme.description }}</small>
                         {% endif %}
                     </td>
-                    <td>
-                        {% if theme.theme_elo %}
-                            {% with elo=theme.theme_elo.0.elo %}
-                                {% if elo < 1400 %}
-                                    <span style="color:#d32f2f;font-weight:600;">
-                                        {{ elo }}
-                                    </span>
-                                {% elif elo < 1700 %}
-                                    <span style="color:#f9a825;font-weight:600;">
-                                        {{ elo }}
-                                    </span>
-                                {% else %}
-                                    <span style="color:#2e7d32;font-weight:600;">
-                                        {{ elo }}
-                                    </span>
-                                {% endif %}
-                            {% endwith %}
-                        {% else %}
-                            —
-                        {% endif %}
-                    </td>
+                    <td x-data='{elo: {{theme.theme_elo.0.elo}}}'
+                    x-text="elo"
+                    {% if category.category_elo and category.lichess_name == 'opening' %}
+                    :class="elo < eloCategory-100 ? 'red' : elo > eloCategory+100 ? 'green' : 'blue'"
+                    {% endif %}
+                    ></td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -153,4 +123,15 @@
 <hr />
 {% endfor %}
 
+<style>
+    .red {
+        color: #c22;
+    }
+    .blue {
+        color: #22c;
+    }
+    .green {
+        color: #2c2;
+    }
+</style>
 {% endblock %}
