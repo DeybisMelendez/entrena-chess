@@ -338,23 +338,31 @@ def theme_overview(request):
 
     user_theme_elos = ThemeElo.objects.filter(user=user)
 
-    categories = (
+    # =========================
+    # CATEGORÍAS ENTRENABLES
+    # =========================
+    trainable_categories = (
         Theme.objects
         .filter(parent__isnull=True)
         .prefetch_related(
+            # Elo de la categoría (si existe)
             Prefetch(
                 "themeelo_set",
                 queryset=user_theme_elos,
                 to_attr="category_elo"
             ),
+            # SOLO subtemas entrenables
             Prefetch(
                 "subthemes",
-                queryset=Theme.objects.filter(is_trainable=True)
-                .prefetch_related(
-                    Prefetch(
-                        "themeelo_set",
-                        queryset=user_theme_elos,
-                        to_attr="theme_elo"
+                queryset=(
+                    Theme.objects
+                    .filter(is_trainable=True)
+                    .prefetch_related(
+                        Prefetch(
+                            "themeelo_set",
+                            queryset=user_theme_elos,
+                            to_attr="theme_elo"
+                        )
                     )
                 ),
                 to_attr="trainable_subthemes"
@@ -363,8 +371,57 @@ def theme_overview(request):
         .order_by("name")
     )
 
+    # Filtrar: solo categorías que realmente tengan temas entrenables
+    trainable_categories = [
+        c for c in trainable_categories
+        if c.trainable_subthemes
+    ]
+
+    # =========================
+    # CATEGORÍAS NO ENTRENABLES
+    # =========================
+    non_trainable_categories = (
+        Theme.objects
+        .filter(parent__isnull=True)
+        .prefetch_related(
+            Prefetch(
+                "themeelo_set",
+                queryset=user_theme_elos,
+                to_attr="category_elo"
+            ),
+            # TODOS los subtemas NO entrenables
+            Prefetch(
+                "subthemes",
+                queryset=(
+                    Theme.objects
+                    .filter(is_trainable=False)
+                    .prefetch_related(
+                        Prefetch(
+                            "themeelo_set",
+                            queryset=user_theme_elos,
+                            to_attr="theme_elo"
+                        )
+                    )
+                ),
+                to_attr="trainable_subthemes"
+            )
+        )
+        .order_by("name")
+    )
+
+    # Filtrar:
+    # - que tenga temas
+    # - que NO tenga ningún tema entrenable
+    non_trainable_categories = [
+        c for c in non_trainable_categories
+        if c.trainable_subthemes and c.subthemes.filter(is_trainable=False).exists()
+    ]
+
     return render(
         request,
         "theme_overview.html",
-        {"categories": categories}
+        {
+            "trainable_categories": trainable_categories,
+            "non_trainable_categories": non_trainable_categories,
+        }
     )
