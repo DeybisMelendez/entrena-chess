@@ -8,17 +8,40 @@ class LichessDB:
     """
     Acceso a la base de datos de puzzles de Lichess (SQLite).
 
+    - Conexión persistente (optimizada para PythonAnywhere)
     - Random rápido con rnd precomputado
-    - Filtro por rating y theme(s)
-    - Devuelve los themes del puzzle seleccionado
+    - Filtro por rating + theme(s)
+    - Devuelve los themes del puzzle
     - Lookup directo por puzzle_id
     """
+
+    _conn = None  # conexión compartida
 
     def __init__(self):
         self.db_path = Path(settings.BASE_DIR) / "lichess_puzzles.sqlite3"
 
     def connect(self):
-        return sqlite3.connect(self.db_path)
+        """
+        Devuelve una conexión SQLite persistente.
+        Solo lectura.
+        """
+        if self.__class__._conn is None:
+            conn = sqlite3.connect(
+                self.db_path,
+                check_same_thread=False
+            )
+
+            cursor = conn.cursor()
+
+            # PRAGMAs críticos para lectura rápida
+            cursor.execute("PRAGMA journal_mode=OFF;")
+            cursor.execute("PRAGMA synchronous=OFF;")
+            cursor.execute("PRAGMA temp_store=MEMORY;")
+            cursor.execute("PRAGMA cache_size=-20000;")  # ~20MB cache
+
+            self.__class__._conn = conn
+
+        return self.__class__._conn
 
     def get_board_orientation(self, fen):
         try:
@@ -30,9 +53,6 @@ class LichessDB:
     # Random óptimo por rating + theme(s)
     # =====================================================
     def get_random_puzzle(self, rating_min=0, rating_max=3000, themes=None):
-        """
-        themes: lista de nombres de themes (al menos uno)
-        """
         themes = themes or []
 
         conn = self.connect()
@@ -40,9 +60,6 @@ class LichessDB:
 
         rnd = random.randint(0, 2**31 - 1)
 
-        # ----------------------------
-        # Construir JOIN y WHERE
-        # ----------------------------
         join = ""
         where = [
             "p.rating BETWEEN ? AND ?",
@@ -62,9 +79,7 @@ class LichessDB:
 
         where_sql = " AND ".join(where)
 
-        # ----------------------------
         # Query principal
-        # ----------------------------
         cursor.execute(f"""
             SELECT DISTINCT
                 p.puzzle_id,
@@ -80,9 +95,7 @@ class LichessDB:
 
         row = cursor.fetchone()
 
-        # ----------------------------
         # Wrap-around
-        # ----------------------------
         if not row:
             cursor.execute(f"""
                 SELECT DISTINCT
@@ -100,14 +113,11 @@ class LichessDB:
             row = cursor.fetchone()
 
         if not row:
-            conn.close()
             return None
 
         puzzle_id, fen, moves, rating = row
 
-        # ----------------------------
-        # Obtener TODOS los themes del puzzle
-        # ----------------------------
+        # Obtener todos los themes del puzzle
         cursor.execute("""
             SELECT t.name
             FROM themes t
@@ -116,7 +126,6 @@ class LichessDB:
         """, (puzzle_id,))
 
         theme_list = [r[0] for r in cursor.fetchall()]
-        conn.close()
 
         return {
             "puzzle_id": puzzle_id,
@@ -142,7 +151,6 @@ class LichessDB:
 
         row = cursor.fetchone()
         if not row:
-            conn.close()
             return None
 
         puzzle_id, fen, moves, rating = row
@@ -155,7 +163,6 @@ class LichessDB:
         """, (puzzle_id,))
 
         theme_list = [r[0] for r in cursor.fetchall()]
-        conn.close()
 
         return {
             "puzzle_id": puzzle_id,
