@@ -82,7 +82,7 @@ def assign_cycle_themes(sender, instance, created, **kwargs):
     least_recent = (
         ThemeElo.objects
         .filter(
-            user=user,
+            user=instance.user,
             theme__is_trainable=True
         )
         .exclude(theme_id__in=weak_theme_ids)
